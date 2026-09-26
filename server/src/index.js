@@ -6,6 +6,7 @@ import bookingRoutes from './modules/booking/routes.js';
 import userRoutes from './modules/user/routes.js';
 import adminRoutes from './modules/admin/routes.js';
 
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -21,6 +22,7 @@ app.use('/api/hotels', searchRoutes);   // A
 app.use('/api/bookings', bookingRoutes); // B
 app.use('/api/auth', userRoutes);        // C
 app.use('/api/admin', adminRoutes);      // D
+
 
 // error format เดียวกันทั้งระบบ: { message }
 app.use((err, req, res, next) => {
