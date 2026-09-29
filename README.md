@@ -10,6 +10,8 @@ docker compose up -d
 
 # 2. ตั้งค่า server
 cp server/.env.example server/.env   # Windows CMD: copy server\.env.example server\.env
+# ตั้ง JWT_SECRET เป็นค่าสุ่มที่ยาวอย่างน้อย 32 ตัวอักษรก่อนรัน server
+# กรอก GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET ใน server/.env เมื่อต้องการเปิด Google Login
 
 # 3. ติดตั้ง package ทั้งหมด (ทำครั้งเดียว)
 npm install
@@ -21,7 +23,7 @@ npm run dev
 เปิด http://localhost:5173 ถ้าเห็นรายชื่อโรงแรม 5 แห่ง แปลว่าทุกอย่างต่อกันครบ
 
 - เช็ก API: http://localhost:3000/api/health
-- ถ้าแก้ `db/schema.sql` หรือ `db/seed.sql` ต้องล้าง DB แล้วสร้างใหม่: `docker compose down -v && docker compose up -d`
+- SQL ใน `db/` จะทำงานอัตโนมัติเมื่อสร้าง PostgreSQL volume ใหม่เท่านั้น หากมีฐานข้อมูลเดิมต้องสำรองข้อมูลก่อน แล้วจึงใช้ขั้นตอน migration/recreate ที่ทีมตกลงกัน
 
 ## ใครดูแลโฟลเดอร์ไหน
 

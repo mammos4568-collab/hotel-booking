@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../api.js';
 import { useLanguage } from '../../context/LanguageContext.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
 
 export default function HotelDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useLanguage();
+  const { user, openAuthModal } = useAuth();
 
   const queryParams = new URLSearchParams(location.search);
   const checkIn = queryParams.get('checkIn') || '';
@@ -17,6 +19,14 @@ export default function HotelDetailPage() {
   const [hotel, setHotel] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [reviews, setReviews] = useState([]);
+  const [reviewStats, setReviewStats] = useState({ averageRating: null, reviewCount: 0, ratingBreakdown: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 } });
+  const [eligibleBookings, setEligibleBookings] = useState([]);
+  const [bookingId, setBookingId] = useState('');
+  const [reviewRating, setReviewRating] = useState('5');
+  const [reviewComment, setReviewComment] = useState('');
+  const [reviewError, setReviewError] = useState('');
+  const [reviewLoading, setReviewLoading] = useState(false);
 
   useEffect(() => {
     const fetchHotelDetail = async () => {
@@ -33,6 +43,66 @@ export default function HotelDetailPage() {
 
     fetchHotelDetail();
   }, [id]);
+
+  useEffect(() => {
+    api(`/reviews?hotelId=${encodeURIComponent(id)}`)
+      .then((data) => {
+        setReviews(data.reviews || []);
+        setReviewStats({
+          averageRating: data.averageRating ?? null,
+          reviewCount: data.reviewCount ?? 0,
+          ratingBreakdown: data.ratingBreakdown ?? { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
+        });
+      })
+      .catch(() => setReviews([]));
+  }, [id]);
+
+  useEffect(() => {
+    if (!user) {
+      setEligibleBookings([]);
+      return;
+    }
+    api('/bookings/me')
+      .then((data) => {
+        const bookings = Array.isArray(data) ? data : data.bookings || [];
+        const today = new Date().toISOString().slice(0, 10);
+        // อ่าน reviews ล่าสุดผ่าน functional updater เพื่อหลีกเลี่ยง stale closure
+        setReviews((currentReviews) => {
+          const alreadyReviewed = new Set(currentReviews.map((r) => String(r.bookingId)));
+          setEligibleBookings(bookings.filter((booking) => {
+            const paymentStatus = booking.paymentStatus || booking.payment_status;
+            const checkout = booking.checkOut || booking.check_out_date;
+            const propertyId = booking.hotelId || booking.propertyId || booking.property_id;
+            return Number(propertyId) === Number(id)
+              && String(paymentStatus).toLowerCase() === 'paid'
+              && checkout < today
+              && !alreadyReviewed.has(String(booking.id || booking.bookingId || booking.booking_id));
+          }));
+          return currentReviews; // ไม่เปลี่ยน reviews state
+        });
+      })
+      .catch(() => setEligibleBookings([]));
+  }, [id, user]);
+
+  const submitReview = async (event) => {
+    event.preventDefault();
+    setReviewError('');
+    setReviewLoading(true);
+    try {
+      const result = await api('/reviews', {
+        method: 'POST',
+        body: { bookingId: Number(bookingId), rating: Number(reviewRating), comment: reviewComment },
+      });
+      setReviews((current) => [result.review, ...current]);
+      setEligibleBookings((current) => current.filter((booking) => String(booking.id || booking.bookingId || booking.booking_id) !== String(bookingId)));
+      setBookingId('');
+      setReviewComment('');
+    } catch (err) {
+      setReviewError(err.message);
+    } finally {
+      setReviewLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -53,7 +123,11 @@ export default function HotelDetailPage() {
     );
   }
 
-  const ratingScore = hotel.stars ? (Number(hotel.stars) * 1.8).toFixed(1) : '8.8';
+  // ใช้คะแนนเฉลี่ยจากรีวิวจริง ถ้ายังไม่มีรีวิวให้แสดงเป็น hotel.stars (fallback)
+  const ratingScore = reviewStats.averageRating !== null
+    ? reviewStats.averageRating.toFixed(1)
+    : (hotel.stars ? Number(hotel.stars).toFixed(1) : null);
+
 
   return (
     <div className="min-h-screen bg-[#f4f6f8] text-slate-800 font-sans pb-24">
@@ -206,6 +280,112 @@ export default function HotelDetailPage() {
             ))
           )}
         </div>
+
+        <section className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 mt-6 shadow-xs">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <h2 className="text-base font-black text-slate-900">รีวิวจากผู้เข้าพัก</h2>
+            {reviewStats.reviewCount > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-amber-400 text-lg">{'★'.repeat(Math.round(reviewStats.averageRating || 0))}</span>
+                <span className="text-base font-black text-slate-900">{reviewStats.averageRating?.toFixed(1)}</span>
+                <span className="text-xs text-slate-400">/ 5 · {reviewStats.reviewCount} รีวิว</span>
+              </div>
+            )}
+          </div>
+
+          {/* Rating Breakdown */}
+          {reviewStats.reviewCount > 0 && (
+            <div className="mt-4 space-y-1.5">
+              {[5, 4, 3, 2, 1].map((star) => {
+                const count = reviewStats.ratingBreakdown[star] ?? 0;
+                const pct = reviewStats.reviewCount > 0 ? Math.round((count / reviewStats.reviewCount) * 100) : 0;
+                return (
+                  <div key={star} className="flex items-center gap-2 text-xs text-slate-600">
+                    <span className="w-3 text-right">{star}</span>
+                    <span className="text-amber-400 text-[10px]">★</span>
+                    <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                      <div className="h-full rounded-full bg-amber-400 transition-all" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="w-6 text-right text-slate-400">{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {reviews.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-500">ยังไม่มีรีวิวสำหรับที่พักนี้</p>
+          ) : (
+            <div className="mt-4 divide-y divide-slate-100">
+              {reviews.map((review) => (
+                <article key={review.id} className="py-4 first:pt-0 last:pb-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      {review.user?.avatarUrl ? (
+                        <img src={review.user.avatarUrl} alt="" className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+                      ) : (
+                        <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center flex-shrink-0">
+                          {(review.user?.name || 'ผ').charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <span className="font-bold text-sm text-slate-800">{review.user?.name || 'ผู้เข้าพัก'}</span>
+                    </div>
+                    <div className="flex flex-col items-end gap-0.5">
+                      <span className="text-amber-500 text-sm leading-none">{'★'.repeat(Math.round(review.rating))}{'☆'.repeat(5 - Math.round(review.rating))}</span>
+                      {review.createdAt && (
+                        <span className="text-[10px] text-slate-400">
+                          {new Date(review.createdAt).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {review.comment && <p className="mt-2 text-sm text-slate-600 whitespace-pre-wrap leading-relaxed">{review.comment}</p>}
+                </article>
+              ))}
+            </div>
+          )}
+
+
+          {user && eligibleBookings.length > 0 && (
+            <form onSubmit={submitReview} className="mt-5 pt-5 border-t border-slate-100 space-y-3">
+              <h3 className="font-bold text-sm text-slate-800">เขียนรีวิวการเข้าพัก</h3>
+              {reviewError && <p role="alert" className="text-sm text-red-700">{reviewError}</p>}
+              <label className="block text-sm text-slate-700">รายการจอง
+                <select required value={bookingId} onChange={(event) => setBookingId(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+                  <option value="">เลือกการจอง</option>
+                  {eligibleBookings.map((booking) => {
+                    const idValue = booking.id || booking.bookingId || booking.booking_id;
+                    return <option key={idValue} value={idValue}>#{idValue} · {booking.checkIn || booking.check_in_date} – {booking.checkOut || booking.check_out_date}</option>;
+                  })}
+                </select>
+              </label>
+              <label className="block text-sm text-slate-700">คะแนน
+                <select value={reviewRating} onChange={(event) => setReviewRating(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+                  {[5, 4, 3, 2, 1].map((rating) => <option key={rating} value={rating}>{rating} ดาว</option>)}
+                </select>
+              </label>
+              <label className="block text-sm text-slate-700">ความคิดเห็น
+                <textarea maxLength={2000} rows={3} value={reviewComment} onChange={(event) => setReviewComment(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
+              </label>
+              <button disabled={reviewLoading || !bookingId} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-60">{reviewLoading ? 'กำลังส่ง…' : 'ส่งรีวิว'}</button>
+            </form>
+          )}
+          {user && eligibleBookings.length === 0 && reviews.some((r) => r.user?.id === user?.id)
+            ? <p className="mt-4 text-sm text-slate-500">คุณได้รีวิวโรงแรมนี้แล้ว</p>
+            : user && eligibleBookings.length === 0
+              ? null /* ไม่แสดงข้อความถ้าไม่เคยจองโรงแรมนี้ */
+              : null
+          }
+          {!user && (
+            <p className="mt-4 text-sm text-slate-500">
+              <button type="button" onClick={() => openAuthModal('login')} className="font-semibold text-blue-600 hover:underline">
+                เข้าสู่ระบบ
+              </button>{' '}
+              เพื่อเขียนรีวิว
+            </p>
+          )}
+        </section>
 
         {/* Policies */}
         <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 mt-6 shadow-xs">
