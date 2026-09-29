@@ -4,8 +4,10 @@ CREATE TABLE users (
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
+    password_hash VARCHAR(255),
     phone_number VARCHAR(50),
+    avatar_url TEXT,
+    role VARCHAR(50) NOT NULL DEFAULT 'user',
     membership_tier VARCHAR(50) DEFAULT 'Standard',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -69,15 +71,27 @@ CREATE TABLE bookings (
 -- 6. สร้างตารางรีวิวและคะแนน (Reviews)
 CREATE TABLE reviews (
     review_id SERIAL PRIMARY KEY,
-    booking_id INT REFERENCES bookings(booking_id) ON DELETE CASCADE,
+    booking_id INT NOT NULL UNIQUE REFERENCES bookings(booking_id) ON DELETE CASCADE,
     user_id INT REFERENCES users(user_id) ON DELETE SET NULL,
     property_id INT REFERENCES properties(property_id) ON DELETE CASCADE,
     rating DECIMAL(2, 1) NOT NULL,
     comment TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- External sign-in identities belong to a user, while provider identities stay unique.
+CREATE TABLE oauth_accounts (
+    oauth_account_id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    provider VARCHAR(50) NOT NULL,
+    provider_account_id VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (provider, provider_account_id)
 );
 
 -- Indexes
 CREATE INDEX idx_properties_city_country ON properties(city, country);
 CREATE INDEX idx_room_inventories_date ON room_inventories(room_id, date);
 CREATE INDEX idx_bookings_user_id ON bookings(user_id);
+CREATE INDEX idx_reviews_property_id ON reviews(property_id);

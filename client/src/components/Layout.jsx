@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useLanguage } from '../context/LanguageContext.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
+import AuthModal from './AuthModal.jsx';
 
 export default function Layout() {
   const { pathname } = useLocation();
   const isHome = pathname === '/';
 
   const { lang, switchLanguage, currency, switchCurrency, t } = useLanguage();
+  const { user, logout, openAuthModal } = useAuth();
   const [isLangModalOpen, setIsLangModalOpen] = useState(false);
   const [isCurrencyModalOpen, setIsCurrencyModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -51,9 +54,11 @@ export default function Layout() {
 
           {/* Desktop Right Actions */}
           <div className="hidden lg:flex items-center gap-3 flex-shrink-0">
-            <Link to="/admin" className="text-xs font-semibold text-slate-700 hover:text-blue-600 px-3 py-2 rounded-lg hover:bg-slate-100 transition">
-              {t('nav_list_property')}
-            </Link>
+            {user && ['owner', 'admin'].includes(user.role) && (
+              <Link to="/admin" className="text-xs font-semibold text-slate-700 hover:text-blue-600 px-3 py-2 rounded-lg hover:bg-slate-100 transition">
+                Admin
+              </Link>
+            )}
 
             {/* ปุ่มคลิกเปลี่ยนสกุลเงิน */}
             <button
@@ -74,12 +79,17 @@ export default function Layout() {
               <span className="text-xs text-slate-400">▾</span>
             </button>
 
-            <Link to="/login" className="text-sm font-semibold text-slate-700 hover:text-blue-600 px-3 py-2 transition">
-              {t('nav_signin')}
-            </Link>
-            <Link to="/login" className="text-sm font-semibold text-blue-600 hover:text-white border border-blue-600 hover:bg-blue-600 px-4 py-1.5 rounded-xl shadow-xs transition">
-              {t('nav_register')}
-            </Link>
+            {user ? (
+              <>
+                <Link to="/profile" className="text-sm font-semibold text-slate-700 hover:text-blue-600 px-2 py-2">{user.name}</Link>
+                <button type="button" onClick={() => logout()} className="text-sm font-semibold text-slate-700 hover:text-blue-600 px-2 py-2">{t('nav_signout')}</button>
+              </>
+            ) : (
+              <>
+                <button type="button" onClick={() => openAuthModal('login')} className="text-sm font-semibold text-slate-700 hover:text-blue-600 px-3 py-2 transition">{t('nav_signin')}</button>
+                <button type="button" onClick={() => openAuthModal('register')} className="text-sm font-semibold text-blue-600 hover:text-white border border-blue-600 hover:bg-blue-600 px-4 py-1.5 rounded-xl shadow-xs transition">{t('nav_register')}</button>
+              </>
+            )}
           </div>
 
           {/* Mobile Right Actions */}
@@ -139,9 +149,17 @@ export default function Layout() {
             </div>
 
             <div className="pt-6 border-t border-slate-100 space-y-2">
-              <Link to="/login" onClick={() => setIsMobileMenuOpen(false)} className="w-full py-2 bg-blue-600 text-white text-center text-xs font-bold rounded-xl block">
-                {t('nav_signin')}
-              </Link>
+              {user ? (
+                <>
+                  <Link to="/profile" onClick={() => setIsMobileMenuOpen(false)} className="w-full py-2 text-slate-700 text-center text-xs font-bold rounded-xl block">{user.name}</Link>
+                  <button type="button" onClick={() => { setIsMobileMenuOpen(false); logout(); }} className="w-full py-2 bg-blue-600 text-white text-center text-xs font-bold rounded-xl block">{t('nav_signout')}</button>
+                </>
+              ) : (
+                <>
+                  <button type="button" onClick={() => { setIsMobileMenuOpen(false); openAuthModal('login'); }} className="w-full py-2 bg-blue-600 text-white text-center text-xs font-bold rounded-xl block">{t('nav_signin')}</button>
+                  <button type="button" onClick={() => { setIsMobileMenuOpen(false); openAuthModal('register'); }} className="w-full py-2 text-blue-600 text-center text-xs font-bold rounded-xl block">{t('nav_register')}</button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -208,6 +226,7 @@ export default function Layout() {
           </div>
         </div>
       )}
+      <AuthModal />
     </div>
   );
 }

@@ -5,11 +5,20 @@ import searchRoutes from './modules/search/routes.js';
 import bookingRoutes from './modules/booking/routes.js';
 import userRoutes from './modules/user/routes.js';
 import adminRoutes from './modules/admin/routes.js';
+import reviewRoutes from './modules/reviews/routes.js';
 
 
 const app = express();
-app.use(cors());
+const allowedClientOrigin = process.env.CLIENT_URL || 'http://localhost:5173';
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || origin === allowedClientOrigin) return callback(null, true);
+    callback(new Error('Origin is not allowed by CORS'));
+  },
+  credentials: true,
+}));
 app.use(express.json());
+
 
 // เช็กว่า server + DB ต่อกันได้
 app.get('/api/health', async (req, res) => {
@@ -21,6 +30,7 @@ app.get('/api/health', async (req, res) => {
 app.use('/api/hotels', searchRoutes);   // A
 app.use('/api/bookings', bookingRoutes); // B
 app.use('/api/auth', userRoutes);        // C
+app.use('/api/reviews', reviewRoutes);   // C
 app.use('/api/admin', adminRoutes);      // D
 
 
