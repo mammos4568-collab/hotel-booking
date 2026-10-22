@@ -1,0 +1,59 @@
+# ============================================================
+# รันแบบ production บนเครื่องเดียว: PostgreSQL + แอป (API + หน้าเว็บใน container เดียว)
+#
+#   1) copy .env.production.example .env.production   แล้วตั้งรหัสผ่าน/JWT_SECRET จริง
+#   2) docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+#   3) เปิด http://localhost:8080
+#
+# ชื่อ project แยกจาก docker-compose.yml (ตอนพัฒนา) → ฐานข้อมูล/volume ไม่ปนกัน
+# ============================================================
+name: hotel-booking-prod
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-agoda_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?ต้องตั้ง POSTGRES_PASSWORD ใน .env.production}
+      POSTGRES_DB: ${POSTGRES_DB:-agoda_db}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      # สร้างตาราง + ข้อมูลตัวอย่างอัตโนมัติ "ครั้งแรก" ที่ volume ยังว่าง (01 → 04 ตามลำดับชื่อไฟล์)
+      - ./db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # ไม่เปิดพอร์ตฐานข้อมูลออกนอกเครื่อง — มีแค่แอปที่คุยกับฐานข้อมูลผ่าน network ภายในของ compose
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy # รอฐานข้อมูลพร้อมก่อนค่อยเปิดแอป
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-agoda_admin}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agoda_db}
+      JWT_SECRET: ${JWT_SECRET:?ต้องตั้ง JWT_SECRET (อย่างน้อย 32 ตัวอักษร) ใน .env.production}
+      # ต้องตรงกับ URL ที่ผู้ใช้เปิดเว็บ (ใช้ตรวจ CORS และเป็นปลายทางหลังล็อกอินผ่าน Google/Facebook/GitHub)
+      CLIENT_URL: ${PUBLIC_URL:-http://localhost:8080}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      # เข้าสู่ระบบด้วย Google / Facebook / GitHub — ช่องไหนเว้นว่าง = ปิดช่องทางนั้น (กดแล้วหน้าเว็บบอกว่ายังไม่เปิด)
+      # callback ต่อจาก PUBLIC_URL ให้เอง เพราะ production เสิร์ฟหน้าเว็บและ API จากโดเมนเดียวกัน
+      # → ต้องลงทะเบียน <PUBLIC_URL>/api/auth/<google|facebook|github>/callback ไว้กับแต่ละเจ้าให้ตรงกัน
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_CALLBACK_URL: ${PUBLIC_URL:-http://localhost:8080}/api/auth/google/callback
+      FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:-}
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-}
+      FACEBOOK_CALLBACK_URL: ${PUBLIC_URL:-http://localhost:8080}/api/auth/facebook/callback
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_CALLBACK_URL: ${PUBLIC_URL:-http://localhost:8080}/api/auth/github/callback
+    ports:
+      - "${APP_PORT:-8080}:3000"
+
+volumes:
+  db_data:

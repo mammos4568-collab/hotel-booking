@@ -1,0 +1,13 @@
+# ไม่ส่งไฟล์เหล่านี้เข้า build context (เร็วขึ้น และไม่เผลอใส่ความลับลง image)
+node_modules
+**/node_modules
+.git
+**/.env
+**/.env.*
+client/dist
+db
+docs
+*.md
+docker-compose*.yml
+Dockerfile
+.dockerignore
