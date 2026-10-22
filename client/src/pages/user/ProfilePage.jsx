@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../api.js';
 import { useAuth } from '../../context/AuthContext.jsx';
+import { useLanguage } from '../../context/LanguageContext.jsx';
 
 const OAUTH_PROVIDERS = [
   {
@@ -44,6 +45,7 @@ const OAUTH_PROVIDERS = [
 
 export default function ProfilePage() {
   const { user, refreshUser, logout } = useAuth();
+  const { tx } = useLanguage();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [name, setName] = useState(user?.name || '');
@@ -72,7 +74,10 @@ export default function ProfilePage() {
     loadAccounts();
     // Show success notice if redirected back after connecting a provider
     const connectedProvider = OAUTH_PROVIDERS.find((p) => searchParams.get(p.key) === 'connected');
-    if (connectedProvider) setNotice(`เชื่อมบัญชี ${connectedProvider.label} แล้ว`);
+    if (connectedProvider) setNotice(tx(`เชื่อมบัญชี ${connectedProvider.label} แล้ว`, `${connectedProvider.label} account connected`));
+    // server ยังไม่ได้ตั้งค่าช่องทางนั้น (เด้งกลับมาพร้อม ?link_error=google_not_configured)
+    const notConfigured = OAUTH_PROVIDERS.find((p) => searchParams.get('link_error') === `${p.key}_not_configured`);
+    if (notConfigured) setError(tx(`ยังไม่เปิดให้เชื่อมบัญชี ${notConfigured.label} ในระบบนี้`, `Connecting a ${notConfigured.label} account isn't available yet`));
   }, []);
 
   const saveProfile = async (event) => {
@@ -81,9 +86,10 @@ export default function ProfilePage() {
     setError('');
     setSavingProfile(true);
     try {
-      await api('/auth/me', { method: 'PUT', body: { name, phone, avatarUrl } });
+      // ช่องรูปโปรไฟล์ว่าง → ส่ง null (= ไม่มีรูป) · server รับ null แต่ปฏิเสธ string ว่าง ('' ไม่ขึ้นต้นด้วย https://)
+      await api('/auth/me', { method: 'PUT', body: { name, phone, avatarUrl: avatarUrl.trim() || null } });
       await refreshUser();
-      setNotice('บันทึกโปรไฟล์แล้ว');
+      setNotice(tx('บันทึกโปรไฟล์แล้ว', 'Profile saved'));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -96,7 +102,7 @@ export default function ProfilePage() {
     setNotice('');
     setError('');
     if (newPassword !== confirmNewPassword) {
-      setError('รหัสผ่านใหม่ทั้งสองช่องไม่ตรงกัน');
+      setError(tx('รหัสผ่านใหม่ทั้งสองช่องไม่ตรงกัน', 'The two new passwords do not match'));
       return;
     }
     setSavingPassword(true);
@@ -105,7 +111,7 @@ export default function ProfilePage() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmNewPassword('');
-      setNotice('เปลี่ยนรหัสผ่านแล้ว');
+      setNotice(tx('เปลี่ยนรหัสผ่านแล้ว', 'Password changed'));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -120,7 +126,7 @@ export default function ProfilePage() {
     try {
       await api(provider.disconnectEndpoint, { method: 'DELETE' });
       await loadAccounts();
-      setNotice(`ยกเลิกการเชื่อมบัญชี ${provider.label} แล้ว`);
+      setNotice(tx(`ยกเลิกการเชื่อมบัญชี ${provider.label} แล้ว`, `${provider.label} account disconnected`));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -140,8 +146,8 @@ export default function ProfilePage() {
   return (
     <div className="max-w-2xl mx-auto space-y-5">
       <header>
-        <h1 className="text-2xl font-black text-slate-900">โปรไฟล์ของฉัน</h1>
-        <p className="text-sm text-slate-500 mt-1">จัดการข้อมูลส่วนตัวและวิธีเข้าสู่ระบบ</p>
+        <h1 className="text-2xl font-black text-slate-900">{tx('โปรไฟล์ของฉัน', 'My profile')}</h1>
+        <p className="text-sm text-slate-500 mt-1">{tx('จัดการข้อมูลส่วนตัวและวิธีเข้าสู่ระบบ', 'Manage your personal details and how you sign in')}</p>
       </header>
 
       {notice && <p role="status" className="p-3 rounded-lg bg-emerald-50 text-emerald-800 text-sm">{notice}</p>}
@@ -149,40 +155,40 @@ export default function ProfilePage() {
 
       {/* ── Profile form ── */}
       <form onSubmit={saveProfile} className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 space-y-4">
-        <h2 className="font-bold text-slate-900">ข้อมูลส่วนตัว</h2>
-        <label className="block text-sm font-semibold text-slate-700">ชื่อ
+        <h2 className="font-bold text-slate-900">{tx('ข้อมูลส่วนตัว', 'Personal details')}</h2>
+        <label className="block text-sm font-semibold text-slate-700">{tx('ชื่อ', 'Name')}
           <input required maxLength={200} value={name} onChange={(e) => setName(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5" />
         </label>
-        <label className="block text-sm font-semibold text-slate-700">อีเมล
+        <label className="block text-sm font-semibold text-slate-700">{tx('อีเมล', 'Email')}
           <input disabled value={user?.email || ''} className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-500" />
         </label>
-        <label className="block text-sm font-semibold text-slate-700">เบอร์โทรศัพท์
+        <label className="block text-sm font-semibold text-slate-700">{tx('เบอร์โทรศัพท์', 'Phone number')}
           <input maxLength={50} value={phone || ''} onChange={(e) => setPhone(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5" />
         </label>
-        <label className="block text-sm font-semibold text-slate-700">Avatar URL
+        <label className="block text-sm font-semibold text-slate-700">{tx('ลิงก์รูปโปรไฟล์', 'Avatar URL')}
           <input type="text" maxLength={2048} value={avatarUrl || ''} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://..." pattern="https://.*" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5" />
-          <span className="text-xs text-slate-400 mt-1 block">ต้องเป็น URL ที่ขึ้นต้นด้วย https://</span>
+          <span className="text-xs text-slate-400 mt-1 block">{tx('ต้องเป็น URL ที่ขึ้นต้นด้วย https://', 'Must be a URL starting with https://')}</span>
         </label>
         <button disabled={savingProfile} className="rounded-lg bg-blue-600 px-4 py-2.5 font-bold text-white disabled:opacity-60">
-          {savingProfile ? 'กำลังบันทึก…' : 'บันทึกโปรไฟล์'}
+          {savingProfile ? tx('กำลังบันทึก…', 'Saving…') : tx('บันทึกโปรไฟล์', 'Save profile')}
         </button>
       </form>
 
       {/* ── Change password ── */}
       <form onSubmit={changePassword} className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 space-y-4">
         <div>
-          <h2 className="font-bold text-slate-900">เปลี่ยนรหัสผ่าน</h2>
+          <h2 className="font-bold text-slate-900">{tx('เปลี่ยนรหัสผ่าน', 'Change password')}</h2>
           {accounts.length > 0 && !accounts.includes('password') && (
-            <p className="text-xs text-slate-400 mt-1">คุณใช้ Social Login อยู่ สามารถตั้งรหัสผ่านเพิ่มได้โดยไม่ต้องกรอกรหัสปัจจุบัน</p>
+            <p className="text-xs text-slate-400 mt-1">{tx('คุณใช้ Social Login อยู่ สามารถตั้งรหัสผ่านเพิ่มได้โดยไม่ต้องกรอกรหัสปัจจุบัน', 'You sign in with a social account — you can add a password without entering a current one')}</p>
           )}
         </div>
-        <label className="block text-sm font-semibold text-slate-700">รหัสผ่านปัจจุบัน
-          <input type="password" autoComplete="current-password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="เว้นว่างได้ถ้าเป็น Social Login" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5" />
+        <label className="block text-sm font-semibold text-slate-700">{tx('รหัสผ่านปัจจุบัน', 'Current password')}
+          <input type="password" autoComplete="current-password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder={tx('เว้นว่างได้ถ้าเป็น Social Login', 'Leave blank if you use social sign-in')} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5" />
         </label>
-        <label className="block text-sm font-semibold text-slate-700">รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)
+        <label className="block text-sm font-semibold text-slate-700">{tx('รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)', 'New password (at least 8 characters)')}
           <input required minLength={8} maxLength={128} type="password" autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5" />
         </label>
-        <label className="block text-sm font-semibold text-slate-700">ยืนยันรหัสผ่านใหม่
+        <label className="block text-sm font-semibold text-slate-700">{tx('ยืนยันรหัสผ่านใหม่', 'Confirm new password')}
           <input
             required
             minLength={8}
@@ -198,18 +204,18 @@ export default function ProfilePage() {
             }`}
           />
           {confirmNewPassword && confirmNewPassword !== newPassword && (
-            <span className="text-xs text-red-600 mt-1 block">รหัสผ่านไม่ตรงกัน</span>
+            <span className="text-xs text-red-600 mt-1 block">{tx('รหัสผ่านไม่ตรงกัน', "Passwords don't match")}</span>
           )}
         </label>
         <button disabled={savingPassword} className="rounded-lg border border-slate-300 px-4 py-2.5 font-bold text-slate-700 disabled:opacity-60">
-          {savingPassword ? 'กำลังบันทึก…' : 'เปลี่ยนรหัสผ่าน'}
+          {savingPassword ? tx('กำลังบันทึก…', 'Saving…') : tx('เปลี่ยนรหัสผ่าน', 'Change password')}
         </button>
       </form>
 
 
       {/* ── Connected accounts ── */}
       <section className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6">
-        <h2 className="font-bold text-slate-900 mb-4">บัญชีที่เชื่อมต่อ</h2>
+        <h2 className="font-bold text-slate-900 mb-4">{tx('บัญชีที่เชื่อมต่อ', 'Connected accounts')}</h2>
         <div className="divide-y divide-slate-100">
           {OAUTH_PROVIDERS.map((provider) => {
             const connected = accounts.includes(provider.key);
@@ -221,7 +227,7 @@ export default function ProfilePage() {
                   <div>
                     <p className="text-sm font-semibold text-slate-800">{provider.label}</p>
                     <p className={`text-xs ${connected ? 'text-emerald-600' : 'text-slate-400'}`}>
-                      {connected ? 'เชื่อมต่อแล้ว' : 'ยังไม่ได้เชื่อมต่อ'}
+                      {connected ? tx('เชื่อมต่อแล้ว', 'Connected') : tx('ยังไม่ได้เชื่อมต่อ', 'Not connected')}
                     </p>
                   </div>
                 </div>
@@ -232,14 +238,14 @@ export default function ProfilePage() {
                     onClick={() => disconnectProvider(provider)}
                     className="text-xs font-semibold text-red-600 hover:underline disabled:opacity-50"
                   >
-                    {isDisconnecting ? 'กำลังยกเลิก…' : 'ยกเลิกการเชื่อมต่อ'}
+                    {isDisconnecting ? tx('กำลังยกเลิก…', 'Disconnecting…') : tx('ยกเลิกการเชื่อมต่อ', 'Disconnect')}
                   </button>
                 ) : (
                   <a
                     href={provider.connectHref}
                     className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
                   >
-                    เชื่อมต่อ
+                    {tx('เชื่อมต่อ', 'Connect')}
                   </a>
                 )}
               </div>
@@ -249,7 +255,7 @@ export default function ProfilePage() {
       </section>
 
       <button type="button" onClick={signOut} className="rounded-lg border border-red-200 px-4 py-2.5 font-bold text-red-700 hover:bg-red-50">
-        ออกจากระบบ
+        {tx('ออกจากระบบ', 'Sign out')}
       </button>
     </div>
   );

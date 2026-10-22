@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../../db.js';
 import { requireAuth } from '../../middleware/auth.js';
+import { publicDisplayName } from '../../lib/displayName.js';
 
 const router = Router();
 const MAX_COMMENT_LENGTH = 2000;
@@ -8,10 +9,10 @@ const MAX_COMMENT_LENGTH = 2000;
 function validateReview({ rating, comment }) {
   const numericRating = Number(rating);
   if (!Number.isFinite(numericRating) || numericRating < 1 || numericRating > 5) {
-    return { error: 'Rating must be between 1 and 5' };
+    return { error: 'คะแนนต้องอยู่ระหว่าง 1 ถึง 5' };
   }
   if (comment !== undefined && comment !== null && (typeof comment !== 'string' || comment.length > MAX_COMMENT_LENGTH)) {
-    return { error: `Comment must be under ${MAX_COMMENT_LENGTH} characters` };
+    return { error: `ความคิดเห็นต้องไม่เกิน ${MAX_COMMENT_LENGTH} ตัวอักษร` };
   }
   return { rating: numericRating, comment: comment?.trim() || null };
 }
@@ -24,7 +25,9 @@ function reviewSelect(whereClause) {
           ${whereClause}`;
 }
 
-function serializeReview(row) {
+// publicView = รายการรีวิวที่ใครก็เปิดดูได้ → ย่อชื่อเป็น "Ploy S." และไม่ส่ง user id (PDPA: เปิดเผยเท่าที่จำเป็น)
+// endpoint ที่เจ้าของรีวิวเรียกดูของตัวเอง (POST, PUT, /me) ยังได้ชื่อเต็มตามเดิม
+function serializeReview(row, { publicView = false } = {}) {
   return {
     id: row.id,
     bookingId: row.bookingId,
@@ -34,8 +37,10 @@ function serializeReview(row) {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     user: row.userId ? {
-      id: row.userId,
-      name: [row.first_name, row.last_name].filter(Boolean).join(' '),
+      ...(publicView ? {} : { id: row.userId }),
+      name: publicView
+        ? publicDisplayName(row.first_name, row.last_name)
+        : [row.first_name, row.last_name].filter(Boolean).join(' '),
       avatarUrl: row.avatarUrl,
     } : null,
   };
@@ -44,7 +49,7 @@ function serializeReview(row) {
 router.post('/', requireAuth, async (req, res, next) => {
   try {
     const bookingId = Number(req.body?.bookingId);
-    if (!Number.isInteger(bookingId) || bookingId <= 0) return res.status(400).json({ message: 'A valid bookingId is required' });
+    if (!Number.isInteger(bookingId) || bookingId <= 0) return res.status(400).json({ message: 'เลขการจองไม่ถูกต้อง' });
     const values = validateReview(req.body || {});
     if (values.error) return res.status(400).json({ message: values.error });
 
@@ -54,7 +59,7 @@ router.post('/', requireAuth, async (req, res, next) => {
          AND check_out_date < CURRENT_DATE`,
       [bookingId, req.user.id]
     );
-    if (!booking.rows[0]) return res.status(403).json({ message: 'Reviews are available after your paid stay is complete' });
+    if (!booking.rows[0]) return res.status(403).json({ message: 'รีวิวได้หลังเข้าพักเสร็จและชำระเงินแล้วเท่านั้น' });
 
     const created = await pool.query(
       `INSERT INTO reviews (booking_id, user_id, property_id, rating, comment)
@@ -64,7 +69,7 @@ router.post('/', requireAuth, async (req, res, next) => {
     const { rows } = await pool.query(reviewSelect('WHERE r.review_id = $1'), [created.rows[0].review_id]);
     res.status(201).json({ review: serializeReview(rows[0]) });
   } catch (error) {
-    if (error.code === '23505') return res.status(409).json({ message: 'This booking already has a review' });
+    if (error.code === '23505') return res.status(409).json({ message: 'การจองนี้รีวิวไปแล้ว' });
     next(error);
   }
 });
@@ -72,7 +77,7 @@ router.post('/', requireAuth, async (req, res, next) => {
 router.get('/', async (req, res, next) => {
   try {
     const hotelId = Number(req.query.hotelId);
-    if (!Number.isInteger(hotelId) || hotelId <= 0) return res.status(400).json({ message: 'A valid hotelId is required' });
+    if (!Number.isInteger(hotelId) || hotelId <= 0) return res.status(400).json({ message: 'รหัสโรงแรมไม่ถูกต้อง' });
 
     const [reviewsResult, statsResult] = await Promise.all([
       pool.query(`${reviewSelect('WHERE r.property_id = $1 ORDER BY r.created_at DESC')}`, [hotelId]),
@@ -101,7 +106,7 @@ router.get('/', async (req, res, next) => {
         2: stats.two,
         1: stats.one,
       },
-      reviews: reviewsResult.rows.map(serializeReview),
+      reviews: reviewsResult.rows.map((row) => serializeReview(row, { publicView: true })),
     });
   } catch (error) {
     next(error);
@@ -120,11 +125,11 @@ router.get('/me', requireAuth, async (req, res, next) => {
 router.put('/:id', requireAuth, async (req, res, next) => {
   try {
     const reviewId = Number(req.params.id);
-    if (!Number.isInteger(reviewId) || reviewId <= 0) return res.status(400).json({ message: 'A valid review id is required' });
+    if (!Number.isInteger(reviewId) || reviewId <= 0) return res.status(400).json({ message: 'รหัสรีวิวไม่ถูกต้อง' });
     const unknown = Object.keys(req.body || {}).filter((key) => !['rating', 'comment'].includes(key));
-    if (unknown.length) return res.status(400).json({ message: `Unsupported review field: ${unknown[0]}` });
+    if (unknown.length) return res.status(400).json({ message: `แก้ไขข้อมูลนี้ของรีวิวไม่ได้: ${unknown[0]}` });
     const existing = await pool.query('SELECT rating, comment FROM reviews WHERE review_id = $1 AND user_id = $2', [reviewId, req.user.id]);
-    if (!existing.rows[0]) return res.status(404).json({ message: 'Review not found' });
+    if (!existing.rows[0]) return res.status(404).json({ message: 'ไม่พบรีวิวนี้' });
     const values = validateReview({
       rating: req.body?.rating ?? existing.rows[0].rating,
       comment: Object.hasOwn(req.body || {}, 'comment') ? req.body.comment : existing.rows[0].comment,
@@ -146,9 +151,9 @@ router.put('/:id', requireAuth, async (req, res, next) => {
 router.delete('/:id', requireAuth, async (req, res, next) => {
   try {
     const reviewId = Number(req.params.id);
-    if (!Number.isInteger(reviewId) || reviewId <= 0) return res.status(400).json({ message: 'A valid review id is required' });
+    if (!Number.isInteger(reviewId) || reviewId <= 0) return res.status(400).json({ message: 'รหัสรีวิวไม่ถูกต้อง' });
     const result = await pool.query('DELETE FROM reviews WHERE review_id = $1 AND user_id = $2', [reviewId, req.user.id]);
-    if (!result.rowCount) return res.status(404).json({ message: 'Review not found' });
+    if (!result.rowCount) return res.status(404).json({ message: 'ไม่พบรีวิวนี้' });
     res.json({ ok: true });
   } catch (error) {
     next(error);

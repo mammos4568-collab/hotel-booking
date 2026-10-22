@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 const OAUTH_PROVIDERS = [
   {
@@ -38,17 +39,29 @@ const OAUTH_PROVIDERS = [
   },
 ];
 
-const OAUTH_ERROR_MESSAGES = {
-  google_link_required: 'บัญชีนี้มีอยู่แล้ว กรุณาเข้าสู่ระบบแล้วเชื่อม Google จากหน้าโปรไฟล์',
-  google_login_failed: 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ กรุณาลองอีกครั้ง',
-  facebook_link_required: 'บัญชีนี้มีอยู่แล้ว กรุณาเข้าสู่ระบบแล้วเชื่อม Facebook จากหน้าโปรไฟล์',
-  facebook_login_failed: 'เข้าสู่ระบบด้วย Facebook ไม่สำเร็จ กรุณาลองอีกครั้ง',
-  github_link_required: 'บัญชีนี้มีอยู่แล้ว กรุณาเข้าสู่ระบบแล้วเชื่อม GitHub จากหน้าโปรไฟล์',
-  github_login_failed: 'เข้าสู่ระบบด้วย GitHub ไม่สำเร็จ กรุณาลองอีกครั้ง',
-};
+// รหัสข้อผิดพลาดที่ server ส่งกลับมาใน URL (?auth_error=google_login_failed) → ข้อความ 2 ภาษา
+//   <ช่องทาง>_link_required   อีเมลนี้มีบัญชีอยู่แล้ว ต้องล็อกอินแล้วไปเชื่อมที่หน้าโปรไฟล์
+//   <ช่องทาง>_login_failed    ผู้ให้บริการปฏิเสธ / ยืนยันตัวตนไม่ผ่าน
+//   <ช่องทาง>_not_configured  server ยังไม่ได้ใส่ Client ID / Secret (ดู README หัวข้อเข้าสู่ระบบด้วย Google / GitHub / Facebook)
+function oauthErrorMessage(code, tx) {
+  const provider = OAUTH_PROVIDERS.find((p) => code.startsWith(`${p.key}_`));
+  const reason = provider ? code.slice(provider.key.length + 1) : '';
+  const label = provider?.label;
+  if (reason === 'link_required') {
+    return tx(`บัญชีนี้มีอยู่แล้ว กรุณาเข้าสู่ระบบแล้วเชื่อม ${label} จากหน้าโปรไฟล์`, `An account with this email already exists. Sign in, then connect ${label} from your profile.`);
+  }
+  if (reason === 'login_failed') {
+    return tx(`เข้าสู่ระบบด้วย ${label} ไม่สำเร็จ กรุณาลองอีกครั้ง`, `Signing in with ${label} failed. Please try again.`);
+  }
+  if (reason === 'not_configured') {
+    return tx(`ยังไม่เปิดให้เข้าสู่ระบบด้วย ${label} — เข้าสู่ระบบด้วยอีเมลและรหัสผ่านแทนได้`, `Signing in with ${label} isn't available yet — please use your email and password.`);
+  }
+  return tx('เข้าสู่ระบบไม่สำเร็จ กรุณาลองอีกครั้ง', 'Sign-in failed. Please try again.');
+}
 
 export default function AuthModal() {
   const { authModal, openAuthModal, closeAuthModal, login, register } = useAuth();
+  const { tx } = useLanguage();
   const [searchParams, setSearchParams] = useSearchParams();
   
   const [email, setEmail] = useState('');
@@ -64,7 +77,7 @@ export default function AuthModal() {
     const errCode = searchParams.get('auth_error');
     if (errCode && !authModal) {
       openAuthModal('login');
-      setError(OAUTH_ERROR_MESSAGES[errCode] ?? 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองอีกครั้ง');
+      setError(oauthErrorMessage(errCode, tx));
       // Clean up URL
       setSearchParams(params => { params.delete('auth_error'); return params; }, { replace: true });
     }
@@ -79,7 +92,7 @@ export default function AuthModal() {
     setError('');
     
     if (!isLogin && password !== confirmPassword) {
-      setError('รหัสผ่านทั้งสองช่องไม่ตรงกัน');
+      setError(tx('รหัสผ่านทั้งสองช่องไม่ตรงกัน', 'The two passwords do not match'));
       return;
     }
 
@@ -119,14 +132,17 @@ export default function AuthModal() {
         <div className="flex items-center justify-between p-6 border-b border-slate-100">
           <div>
             <h2 className="text-2xl font-black text-slate-900">
-              {isLogin ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก'}
+              {isLogin ? tx('เข้าสู่ระบบ', 'Sign in') : tx('สมัครสมาชิก', 'Create an account')}
             </h2>
             <p className="text-sm text-slate-500 mt-1">
-              {isLogin ? 'Sign in to your Hotel Booking account' : 'Create your Hotel Booking account'}
+              {isLogin
+                ? tx('เข้าสู่ระบบบัญชี HotelBooking ของคุณ', 'Sign in to your HotelBooking account')
+                : tx('สร้างบัญชี HotelBooking เพื่อจองและจัดการการเข้าพัก', 'Create your HotelBooking account to book and manage stays')}
             </p>
           </div>
           <button 
             onClick={closeAuthModal} 
+            aria-label={tx('ปิด', 'Close')}
             className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-xl transition self-start"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -144,36 +160,44 @@ export default function AuthModal() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {!isLogin && (
-              <label className="block text-sm font-semibold text-slate-700">ชื่อและนามสกุล
+              <label className="block text-sm font-semibold text-slate-700">{tx('ชื่อและนามสกุล', 'Full name')}
                 <input required autoComplete="name" maxLength={200} value={name} onChange={(e) => setName(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-600 transition" />
               </label>
             )}
             
-            <label className="block text-sm font-semibold text-slate-700">อีเมล
+            <label className="block text-sm font-semibold text-slate-700">{tx('อีเมล', 'Email')}
               <input required autoComplete="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-600 transition" />
             </label>
             
             <label className="block text-sm font-semibold text-slate-700">
-              {isLogin ? 'รหัสผ่าน' : 'รหัสผ่าน (อย่างน้อย 8 ตัวอักษร)'}
+              {isLogin ? tx('รหัสผ่าน', 'Password') : tx('รหัสผ่าน (อย่างน้อย 8 ตัวอักษร)', 'Password (at least 8 characters)')}
               <input required autoComplete={isLogin ? 'current-password' : 'new-password'} type="password" minLength={isLogin ? undefined : 8} maxLength={128} value={password} onChange={(e) => setPassword(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-600 transition" />
             </label>
             
             {!isLogin && (
-              <label className="block text-sm font-semibold text-slate-700">ยืนยันรหัสผ่าน
+              <label className="block text-sm font-semibold text-slate-700">{tx('ยืนยันรหัสผ่าน', 'Confirm password')}
                 <input required autoComplete="new-password" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-600 transition" />
               </label>
             )}
 
             <button type="submit" disabled={loading} className="w-full rounded-lg bg-blue-600 py-3 font-bold text-white hover:bg-blue-700 disabled:opacity-60 transition mt-2 shadow-xs">
-              {loading ? 'กำลังประมวลผล…' : (isLogin ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก')}
+              {loading ? tx('กำลังประมวลผล…', 'Please wait…') : (isLogin ? tx('เข้าสู่ระบบ', 'Sign in') : tx('สมัครสมาชิก', 'Create account'))}
             </button>
+            {/* PDPA: แจ้งว่าจะใช้ข้อมูลอย่างไรก่อนสร้างบัญชี */}
+            {!isLogin && (
+              <p className="text-xs leading-relaxed text-slate-500">
+                {tx('การสมัครสมาชิกถือว่าคุณรับทราบ', 'By creating an account you acknowledge our')}{' '}
+                <a href="/privacy" target="_blank" rel="noopener" className="font-semibold text-blue-600 underline underline-offset-2">{tx('นโยบายความเป็นส่วนตัว', 'Privacy Policy')}</a>
+                {tx(' เราใช้ชื่อและอีเมลเพื่อจัดการบัญชีและการจองของคุณเท่านั้น', '. We use your name and email only to manage your account and bookings.')}
+              </p>
+            )}
           </form>
 
           {/* Social Login */}
           <div className="mt-6">
             <div className="relative flex items-center gap-3">
               <div className="flex-1 border-t border-slate-200" />
-              <span className="text-xs text-slate-400 font-medium">หรือดำเนินการด้วย</span>
+              <span className="text-xs text-slate-400 font-medium">{tx('หรือดำเนินการด้วย', 'or continue with')}</span>
               <div className="flex-1 border-t border-slate-200" />
             </div>
             <div className="mt-4 grid grid-cols-3 gap-2">
@@ -181,6 +205,7 @@ export default function AuthModal() {
                 <a
                   key={provider.key}
                   href={provider.href}
+                  aria-label={tx(`ดำเนินการต่อด้วย ${provider.label}`, `Continue with ${provider.label}`)}
                   className="flex items-center justify-center gap-2 rounded-lg border border-slate-300 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
                 >
                   {provider.icon}
@@ -194,9 +219,9 @@ export default function AuthModal() {
         {/* Footer Toggle */}
         <div className="bg-slate-50 p-4 text-center text-sm text-slate-600 border-t border-slate-100">
           {isLogin ? (
-            <>ยังไม่มีบัญชี? <button onClick={() => switchMode('register')} className="font-bold text-blue-600 hover:underline">สมัครสมาชิก</button></>
+            <>{tx('ยังไม่มีบัญชี?', "Don't have an account?")} <button onClick={() => switchMode('register')} className="font-bold text-blue-600 hover:underline">{tx('สมัครสมาชิก', 'Sign up')}</button></>
           ) : (
-            <>มีบัญชีแล้ว? <button onClick={() => switchMode('login')} className="font-bold text-blue-600 hover:underline">เข้าสู่ระบบ</button></>
+            <>{tx('มีบัญชีแล้ว?', 'Already have an account?')} <button onClick={() => switchMode('login')} className="font-bold text-blue-600 hover:underline">{tx('เข้าสู่ระบบ', 'Sign in')}</button></>
           )}
         </div>
       </div>

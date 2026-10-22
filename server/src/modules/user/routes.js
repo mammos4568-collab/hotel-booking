@@ -19,9 +19,12 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Helpers
 // ---------------------------------------------------------------------------
 
+// ชื่อคำเดียว (เช่น "Arter" หรือ username ของ GitHub) → นามสกุลเป็น '' ไม่ใช่ null
+// เพราะ users.last_name เป็น NOT NULL (db/01-schema.sql) — ถ้าส่ง null ไป INSERT/UPDATE จะ error
+// ที่โชว์ชื่อใช้ [first, last].filter(Boolean).join(' ') อยู่แล้ว จึงไม่มีช่องว่างเกิน
 function splitName(name) {
   const parts = name.trim().split(/\s+/);
-  return { firstName: parts[0], lastName: parts.slice(1).join(' ') || null };
+  return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
 }
 
 function publicUser(row) {
@@ -167,7 +170,8 @@ const PROVIDERS = {
         }),
       });
       const tokenData = await tokenRes.json();
-      if (!tokenRes.ok || !tokenData.access_token) throw new Error('GitHub token exchange failed');
+      // GitHub บอกเหตุผลใน tokenData.error เช่น incorrect_client_credentials (Secret ผิด), redirect_uri_mismatch, bad_verification_code
+      if (!tokenRes.ok || !tokenData.access_token) throw new Error(`GitHub token exchange failed (${tokenData.error ?? tokenRes.status})`);
 
       const headers = { Authorization: `Bearer ${tokenData.access_token}`, Accept: 'application/vnd.github+json' };
 
@@ -217,7 +221,11 @@ function startOAuth(providerName, linking = false) {
       const [, , callbackUrlKey] = cfg.envKeys;
 
       if (!process.env[clientIdKey] || !process.env[clientSecretKey] || !process.env[callbackUrlKey]) {
-        return res.status(503).json({ message: `${providerName} sign-in is not configured` });
+        // ยังไม่ได้ตั้งค่าช่องทางนี้ → พากลับหน้าเว็บพร้อมรหัสข้อผิดพลาด ให้หน้าเว็บขึ้นข้อความที่อ่านเข้าใจ
+        // (ปุ่มเป็นลิงก์เปิดทั้งหน้า ถ้าตอบ JSON ผู้ใช้จะเห็นหน้าขาวที่มีแต่ข้อความ JSON)
+        const target = frontendUrl(linking ? '/profile' : '/');
+        target.searchParams.set(linking ? 'link_error' : 'auth_error', `${providerName}_not_configured`);
+        return res.redirect(target.toString());
       }
 
       const nonce = randomBytes(32).toString('base64url');
@@ -318,6 +326,8 @@ function handleOAuthCallback(providerName) {
       setAuthCookie(res, signToken({ userId: user.user_id }));
       res.redirect(frontendUrl(state.userId ? `/profile?${providerName}=connected` : '/').toString());
     } catch (error) {
+      // บันทึกสาเหตุไว้ดูตอนแก้ปัญหา — เฉพาะข้อความ error (ไม่มีข้อมูลส่วนตัว) ห้าม log code/token/โปรไฟล์
+      console.warn(`[${new Date().toISOString()}] OAuth ${providerName} callback failed: ${error.message}`);
       const target = frontendUrl('/');
       target.searchParams.set(
         'auth_error',
@@ -339,9 +349,9 @@ function handleOAuthDisconnect(providerName) {
          FROM users WHERE user_id = $1`,
         [req.user.id],
       );
-      if (!methods.rows[0]) return res.status(404).json({ message: 'User not found' });
+      if (!methods.rows[0]) return res.status(404).json({ message: 'ไม่พบบัญชีผู้ใช้' });
       if (!methods.rows[0].password_hash && Number(methods.rows[0].oauth_count) <= 1) {
-        return res.status(400).json({ message: 'Add a password before disconnecting your only sign-in method' });
+        return res.status(400).json({ message: 'กรุณาตั้งรหัสผ่านก่อน เพราะนี่คือช่องทางเข้าสู่ระบบเดียวของบัญชีนี้' });
       }
       await pool.query('DELETE FROM oauth_accounts WHERE user_id = $1 AND provider = $2', [req.user.id, providerName]);
       res.json({ ok: true });
@@ -360,9 +370,9 @@ router.post('/register', async (req, res, next) => {
     const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
     const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
     const password = req.body?.password;
-    if (!name || name.length > 200) return res.status(400).json({ message: 'Name is required and must be under 200 characters' });
-    if (!EMAIL_PATTERN.test(email) || email.length > 255) return res.status(400).json({ message: 'Enter a valid email address' });
-    if (!validatePassword(password)) return res.status(400).json({ message: 'Password must be between 8 and 128 characters' });
+    if (!name || name.length > 200) return res.status(400).json({ message: 'กรุณากรอกชื่อ (ไม่เกิน 200 ตัวอักษร)' });
+    if (!EMAIL_PATTERN.test(email) || email.length > 255) return res.status(400).json({ message: 'อีเมลไม่ถูกต้อง' });
+    if (!validatePassword(password)) return res.status(400).json({ message: 'รหัสผ่านต้องยาว 8–128 ตัวอักษร' });
 
     const { firstName, lastName } = splitName(name);
     const passwordHash = await bcrypt.hash(password, 12);
@@ -375,7 +385,7 @@ router.post('/register', async (req, res, next) => {
     setAuthCookie(res, signToken({ userId: rows[0].user_id }));
     res.status(201).json({ user: publicUser(rows[0]) });
   } catch (error) {
-    if (error.code === '23505') return res.status(409).json({ message: 'An account with this email already exists' });
+    if (error.code === '23505') return res.status(409).json({ message: 'อีเมลนี้มีบัญชีอยู่แล้ว กรุณาเข้าสู่ระบบ' });
     next(error);
   }
 });
@@ -384,7 +394,7 @@ router.post('/login', async (req, res, next) => {
   try {
     const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
     const password = req.body?.password;
-    if (!email || typeof password !== 'string') return res.status(400).json({ message: 'Email and password are required' });
+    if (!email || typeof password !== 'string') return res.status(400).json({ message: 'กรุณากรอกอีเมลและรหัสผ่าน' });
 
     const { rows } = await pool.query(
       `SELECT user_id, first_name, last_name, email, password_hash, phone_number, avatar_url, role
@@ -393,7 +403,7 @@ router.post('/login', async (req, res, next) => {
     );
     const user = rows[0];
     if (!user?.password_hash || !(await bcrypt.compare(password, user.password_hash))) {
-      return res.status(401).json({ message: 'Email or password is incorrect' });
+      return res.status(401).json({ message: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' });
     }
 
     setAuthCookie(res, signToken({ userId: user.user_id }));
@@ -416,20 +426,20 @@ router.put('/me', requireAuth, async (req, res, next) => {
   try {
     const allowed = ['name', 'phone', 'avatarUrl'];
     const unknown = Object.keys(req.body || {}).filter((key) => !allowed.includes(key));
-    if (unknown.length) return res.status(400).json({ message: `Unsupported profile field: ${unknown[0]}` });
+    if (unknown.length) return res.status(400).json({ message: `แก้ไขข้อมูลนี้ไม่ได้: ${unknown[0]}` });
 
     const current = await pool.query(
       'SELECT first_name, last_name, phone_number, avatar_url FROM users WHERE user_id = $1',
       [req.user.id],
     );
-    if (!current.rows[0]) return res.status(404).json({ message: 'User not found' });
+    if (!current.rows[0]) return res.status(404).json({ message: 'ไม่พบบัญชีผู้ใช้' });
 
     const profile = current.rows[0];
     let firstName = profile.first_name;
     let lastName = profile.last_name;
     if (Object.hasOwn(req.body, 'name')) {
       if (typeof req.body.name !== 'string' || !req.body.name.trim() || req.body.name.trim().length > 200) {
-        return res.status(400).json({ message: 'Name is required and must be under 200 characters' });
+        return res.status(400).json({ message: 'กรุณากรอกชื่อ (ไม่เกิน 200 ตัวอักษร)' });
       }
       ({ firstName, lastName } = splitName(req.body.name));
     }
@@ -437,11 +447,11 @@ router.put('/me', requireAuth, async (req, res, next) => {
     const phone = Object.hasOwn(req.body, 'phone') ? req.body.phone : profile.phone_number;
     const avatarUrl = Object.hasOwn(req.body, 'avatarUrl') ? req.body.avatarUrl : profile.avatar_url;
     if (phone !== null && phone !== undefined && (typeof phone !== 'string' || phone.length > 50)) {
-      return res.status(400).json({ message: 'Phone must be under 50 characters' });
+      return res.status(400).json({ message: 'เบอร์โทรต้องไม่เกิน 50 ตัวอักษร' });
     }
     if (avatarUrl !== null && avatarUrl !== undefined) {
       if (typeof avatarUrl !== 'string' || avatarUrl.length > 2048 || !avatarUrl.startsWith('https://')) {
-        return res.status(400).json({ message: 'Avatar URL must be a valid https:// URL under 2048 characters' });
+        return res.status(400).json({ message: 'ลิงก์รูปโปรไฟล์ต้องขึ้นต้นด้วย https:// และยาวไม่เกิน 2048 ตัวอักษร' });
       }
     }
 
@@ -461,7 +471,7 @@ router.put('/password', requireAuth, async (req, res, next) => {
   try {
     const { currentPassword, newPassword } = req.body || {};
     if (!validatePassword(newPassword)) {
-      return res.status(400).json({ message: 'New password must be between 8 and 128 characters' });
+      return res.status(400).json({ message: 'รหัสผ่านใหม่ต้องยาว 8–128 ตัวอักษร' });
     }
 
     const { rows } = await pool.query('SELECT password_hash FROM users WHERE user_id = $1', [req.user.id]);
@@ -470,10 +480,10 @@ router.put('/password', requireAuth, async (req, res, next) => {
     if (existingHash) {
       // มี password เดิมอยู่แล้ว → ต้องตรวจสอบ currentPassword ก่อน
       if (typeof currentPassword !== 'string' || !currentPassword) {
-        return res.status(400).json({ message: 'Current password is required' });
+        return res.status(400).json({ message: 'กรุณากรอกรหัสผ่านปัจจุบัน' });
       }
       if (!(await bcrypt.compare(currentPassword, existingHash))) {
-        return res.status(400).json({ message: 'Current password is incorrect' });
+        return res.status(400).json({ message: 'รหัสผ่านปัจจุบันไม่ถูกต้อง' });
       }
     }
     // ถ้าไม่มี password_hash (OAuth-only user) → ตั้ง password ครั้งแรกได้เลย

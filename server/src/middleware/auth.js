@@ -85,11 +85,11 @@ export async function requireAuth(req, res, next) {
   let payload;
   try {
     const token = readCookie(req, AUTH_COOKIE_NAME);
-    if (!token) return res.status(401).json({ message: 'Authentication required' });
+    if (!token) return res.status(401).json({ message: 'กรุณาเข้าสู่ระบบก่อน' });
     payload = verifyToken(token);
   } catch (error) {
     if (error.message?.startsWith('JWT_SECRET')) return next(error);
-    return res.status(401).json({ message: 'Authentication required' });
+    return res.status(401).json({ message: 'กรุณาเข้าสู่ระบบก่อน' });
   }
 
   try {
@@ -98,7 +98,7 @@ export async function requireAuth(req, res, next) {
        FROM users WHERE user_id = $1`,
       [payload.userId]
     );
-    if (!rows[0]) return res.status(401).json({ message: 'Authentication required' });
+    if (!rows[0]) return res.status(401).json({ message: 'กรุณาเข้าสู่ระบบก่อน' });
 
     const user = rows[0];
     req.user = {
@@ -117,8 +117,8 @@ export async function requireAuth(req, res, next) {
 
 export function requireRole(...roles) {
   return (req, res, next) => {
-    if (!req.user) return res.status(401).json({ message: 'Authentication required' });
-    if (!roles.includes(req.user.role)) return res.status(403).json({ message: 'Forbidden' });
+    if (!req.user) return res.status(401).json({ message: 'กรุณาเข้าสู่ระบบก่อน' });
+    if (!roles.includes(req.user.role)) return res.status(403).json({ message: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้' });
     next();
   };
 }
