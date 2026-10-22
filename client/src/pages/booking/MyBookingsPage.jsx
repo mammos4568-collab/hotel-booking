@@ -1,162 +1,191 @@
-// [B] การจองของฉัน — แสดงลิสต์ bookings ของ user ที่ login อยู่
-// *** หมายเหตุ: GET /api/bookings/me ยังเป็น 501 (TODO ของทีม B) ***
-// เมื่อทีม B implement แล้ว หน้านี้จะแสดงข้อมูลอัตโนมัติ
-
+// [B] การจองของฉัน — แท็บ กำลังจะถึง / ผ่านไปแล้ว / ยกเลิก + ปุ่มชำระเงิน/ยกเลิก/รีวิว
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api.js';
+import Icon from '../../components/Icon.jsx';
+import SmartImage from '../../components/SmartImage.jsx';
+import ConfirmDialog from '../../components/ConfirmDialog.jsx';
+import EmptyState from '../../components/EmptyState.jsx';
+import { PageLoader } from '../../components/Loading.jsx';
+import { useLanguage } from '../../context/LanguageContext.jsx';
+import { cityLabel, formatDate } from '../../lib/format.js';
+import { STATUS_META } from './bookingStatus.js';
 
-const STATUS_STYLES = {
-  confirmed: 'bg-blue-50 text-blue-700 border-blue-200',
-  cancelled: 'bg-red-50 text-red-700 border-red-200',
-  completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-};
+const TABS = [
+  { key: 'upcoming', statuses: ['awaiting_payment', 'confirmed'] },
+  { key: 'past', statuses: ['completed'] },
+  { key: 'cancelled', statuses: ['cancelled', 'expired'] },
+];
 
-const PAYMENT_STYLES = {
-  paid: 'bg-emerald-50 text-emerald-700',
-  pending: 'bg-amber-50 text-amber-700',
-  failed: 'bg-red-50 text-red-700',
-  refunded: 'bg-slate-100 text-slate-600',
-};
+function BookingCard({ booking, onCancel }) {
+  const { lang, tx, formatPrice } = useLanguage();
+  const meta = STATUS_META[booking.status];
+  const dateOpts = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' };
 
-function statusLabel(status) {
-  const map = { confirmed: 'ยืนยันแล้ว', cancelled: 'ยกเลิกแล้ว', completed: 'เสร็จสิ้น' };
-  return map[String(status).toLowerCase()] ?? status;
-}
+  return (
+    <article className="flex animate-slide-up flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white transition hover:shadow-lg hover:shadow-slate-900/5 sm:flex-row">
+      <Link to={`/bookings/${booking.id}`} className="sm:w-56 sm:shrink-0">
+        <SmartImage src={booking.hotel.imageUrl} alt={booking.hotel.name} width={480} className="h-44 sm:h-full" />
+      </Link>
+      <div className="flex min-w-0 flex-1 flex-col gap-4 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="font-mono text-xs text-slate-400">{booking.reference}</p>
+            <Link to={`/bookings/${booking.id}`} className="mt-0.5 block text-lg font-extrabold leading-snug text-slate-900 hover:text-brand-700">{booking.hotel.name}</Link>
+            <p className="text-sm text-slate-500">{booking.room.name} · {cityLabel(booking.hotel.city, lang)}</p>
+          </div>
+          <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${meta.className}`}>{meta.label(tx)}</span>
+        </div>
 
-function paymentLabel(status) {
-  const map = { paid: 'ชำระแล้ว', pending: 'รอชำระ', failed: 'ชำระไม่สำเร็จ', refunded: 'คืนเงินแล้ว' };
-  return map[String(status).toLowerCase()] ?? status;
-}
+        <div className="grid grid-cols-2 gap-3 rounded-2xl bg-slate-50 p-3 text-sm sm:grid-cols-4">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{tx('เช็กอิน', 'Check-in')}</p>
+            <p className="font-semibold text-slate-900">{formatDate(booking.checkIn, lang, dateOpts)}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{tx('เช็กเอาต์', 'Check-out')}</p>
+            <p className="font-semibold text-slate-900">{formatDate(booking.checkOut, lang, dateOpts)}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{tx('ผู้เข้าพัก', 'Guests')}</p>
+            <p className="font-semibold text-slate-900">
+              {booking.guests} · {booking.nights} {tx('คืน', 'nights')}
+              {booking.rooms > 1 && <> · {booking.rooms} {tx('ห้อง', 'rooms')}</>}
+            </p>
+          </div>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{tx('ยอดรวม', 'Total')}</p>
+            <p className="font-black text-slate-900">{formatPrice(booking.totalAmount)}</p>
+          </div>
+        </div>
 
-function formatDate(dateStr) {
-  if (!dateStr) return '-';
-  return new Date(dateStr).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+        <div className="flex flex-wrap items-center gap-2">
+          {booking.canPay && (
+            <Link to={`/checkout/pay/${booking.id}`} className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white shadow-md shadow-brand-600/25 hover:bg-brand-700">
+              <Icon name="card" className="h-4 w-4" />{tx('ชำระเงิน', 'Pay now')}
+            </Link>
+          )}
+          {booking.canReview && (
+            <Link to={`/hotels/${booking.hotel.id}#reviews`} className="inline-flex items-center gap-1.5 rounded-xl bg-amber-400 px-4 py-2 text-sm font-bold text-amber-950 hover:bg-amber-300">
+              <Icon name="star" className="h-4 w-4" />{tx('เขียนรีวิว', 'Write a review')}
+            </Link>
+          )}
+          <Link to={`/bookings/${booking.id}`} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            {tx('ดูรายละเอียด', 'View details')}
+          </Link>
+          {['cancelled', 'expired', 'completed'].includes(booking.status) && (
+            <Link to={`/hotels/${booking.hotel.id}`} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              <Icon name="arrow-right" className="h-4 w-4" />{tx('จองอีกครั้ง', 'Book again')}
+            </Link>
+          )}
+          {booking.canCancel && (
+            <button type="button" onClick={() => onCancel(booking)} className="ml-auto rounded-xl px-3 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50">
+              {tx('ยกเลิกการจอง', 'Cancel booking')}
+            </button>
+          )}
+        </div>
+      </div>
+    </article>
+  );
 }
 
 export default function MyBookingsPage() {
-  const [bookings, setBookings] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { tx, formatPrice } = useLanguage();
+  const [bookings, setBookings] = useState(null);
   const [error, setError] = useState('');
+  const [tab, setTab] = useState('upcoming');
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState('');
 
   useEffect(() => {
-    api('/bookings/me')
-      .then((data) => {
-        const list = Array.isArray(data) ? data : (data.bookings ?? []);
-        setBookings(list);
-      })
-      .catch((err) => {
-        // ทีม B ยังไม่ implement — แสดง empty state แทน error
-        if (err.message?.includes('501')) {
-          setBookings([]);
-        } else {
-          setError(err.message || 'ไม่สามารถโหลดข้อมูลการจองได้');
-        }
-      })
-      .finally(() => setLoading(false));
+    api('/bookings/me').then((data) => setBookings(data.bookings || [])).catch((err) => setError(err.message));
   }, []);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-7 h-7 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  const confirmCancel = async () => {
+    setCancelling(true);
+    setCancelError('');
+    try {
+      const { booking } = await api(`/bookings/${cancelTarget.id}/cancel`, { method: 'POST' });
+      setBookings((list) => list.map((b) => (b.id === booking.id ? booking : b)));
+      setCancelTarget(null);
+    } catch (err) {
+      setCancelError(err.message);
+    } finally {
+      setCancelling(false);
+    }
+  };
 
-  if (error) {
-    return (
-      <div className="max-w-2xl mx-auto py-10 text-center">
-        <p className="text-sm text-red-600 bg-red-50 rounded-xl p-4">{error}</p>
-      </div>
-    );
-  }
+  if (error) return <div className="mx-auto max-w-xl py-10"><EmptyState icon="alert" tone="error" title={tx('โหลดการจองไม่สำเร็จ', 'Could not load bookings')} description={error} /></div>;
+  if (!bookings) return <PageLoader />;
+
+  const counts = Object.fromEntries(TABS.map((t) => [t.key, bookings.filter((b) => t.statuses.includes(b.status)).length]));
+  const current = TABS.find((t) => t.key === tab);
+  // กำลังจะถึง: เรียงจากวันเข้าพักที่ใกล้ที่สุดก่อน · แท็บอื่น: ล่าสุดก่อน
+  const list = bookings
+    .filter((b) => current.statuses.includes(b.status))
+    .sort((a, b) => (tab === 'upcoming' ? a.checkIn.localeCompare(b.checkIn) : b.checkIn.localeCompare(a.checkIn)));
+  const labels = {
+    upcoming: tx('กำลังจะถึง', 'Upcoming'),
+    past: tx('ผ่านไปแล้ว', 'Past stays'),
+    cancelled: tx('ยกเลิก', 'Cancelled'),
+  };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-5">
-      <header>
-        <h1 className="text-2xl font-black text-slate-900">การจองของฉัน</h1>
-        <p className="text-sm text-slate-500 mt-1">ประวัติและสถานะการจองทั้งหมด</p>
+    <div className="mx-auto max-w-4xl">
+      <header className="flex flex-col gap-1">
+        <h1 className="text-3xl font-black tracking-tight text-slate-900">{tx('การจองของฉัน', 'My bookings')}</h1>
+        <p className="text-sm text-slate-500">{tx('จัดการทริปทั้งหมดของคุณได้ที่นี่', 'Manage all your trips in one place')}</p>
       </header>
 
-      {bookings.length === 0 ? (
-        <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center space-y-3">
-          <div className="text-4xl">📋</div>
-          <p className="font-bold text-slate-800">ยังไม่มีการจอง</p>
-          <p className="text-sm text-slate-500">เมื่อคุณจองห้องพักแล้ว รายการจะปรากฏที่นี่</p>
-          <Link
-            to="/"
-            className="inline-block mt-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700 transition"
+      <div className="mt-6 flex gap-1 overflow-x-auto rounded-2xl bg-slate-200/70 p-1 no-scrollbar">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setTab(t.key)}
+            className={`flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-bold transition ${
+              tab === t.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+            }`}
           >
-            ค้นหาที่พัก
-          </Link>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {bookings.map((booking) => {
-            const bookingId = booking.id ?? booking.booking_id ?? booking.bookingId;
-            const reference = booking.bookingReference ?? booking.booking_reference ?? `#${bookingId}`;
-            const hotelName = booking.hotelName ?? booking.property_name ?? booking.propertyName ?? 'ที่พัก';
-            const roomName = booking.roomName ?? booking.room_type_name ?? booking.roomTypeName ?? '';
-            const checkIn = booking.checkIn ?? booking.check_in_date;
-            const checkOut = booking.checkOut ?? booking.check_out_date;
-            const bookingStatus = (booking.bookingStatus ?? booking.booking_status ?? 'confirmed').toLowerCase();
-            const paymentStatus = (booking.paymentStatus ?? booking.payment_status ?? 'pending').toLowerCase();
-            const totalAmount = booking.totalAmount ?? booking.total_amount;
+            {labels[t.key]}
+            <span className={`rounded-full px-2 py-0.5 text-xs ${tab === t.key ? 'bg-brand-600 text-white' : 'bg-slate-300/80 text-slate-700'}`}>{counts[t.key]}</span>
+          </button>
+        ))}
+      </div>
 
-            return (
-              <div key={bookingId} className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-xs">
-                {/* Top row */}
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-mono text-slate-400 mb-1">{reference}</p>
-                    <h2 className="font-extrabold text-slate-900 text-base leading-tight">{hotelName}</h2>
-                    {roomName && <p className="text-xs text-slate-500 mt-0.5">{roomName}</p>}
-                  </div>
-                  <div className="flex flex-wrap gap-2 sm:flex-col sm:items-end">
-                    <span className={`inline-block text-[11px] font-bold px-2.5 py-1 rounded-full border ${STATUS_STYLES[bookingStatus] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                      {statusLabel(bookingStatus)}
-                    </span>
-                    <span className={`inline-block text-[11px] font-bold px-2.5 py-1 rounded-full ${PAYMENT_STYLES[paymentStatus] ?? 'bg-slate-100 text-slate-600'}`}>
-                      {paymentLabel(paymentStatus)}
-                    </span>
-                  </div>
-                </div>
+      <div className="mt-6 space-y-4">
+        {list.length === 0 ? (
+          <EmptyState
+            icon={tab === 'upcoming' ? 'calendar' : tab === 'past' ? 'map' : 'ticket'}
+            title={tab === 'upcoming' ? tx('ยังไม่มีทริปที่กำลังจะถึง', 'No upcoming trips') : tab === 'past' ? tx('ยังไม่มีประวัติการเข้าพัก', 'No past stays yet') : tx('ไม่มีการจองที่ถูกยกเลิก', 'No cancelled bookings')}
+            description={tab === 'upcoming' ? tx('ค้นหาที่พักถูกใจแล้วเริ่มวางแผนทริปถัดไปของคุณ', 'Find a place you love and start planning your next trip.') : undefined}
+            action={tab === 'upcoming' && <Link to="/search" className="rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-brand-700">{tx('ค้นหาที่พัก', 'Search stays')}</Link>}
+          />
+        ) : (
+          list.map((booking) => <BookingCard key={booking.id} booking={booking} onCancel={setCancelTarget} />)
+        )}
+      </div>
 
-                {/* Dates */}
-                <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-600">
-                  <div>
-                    <span className="text-xs text-slate-400 block">เช็คอิน</span>
-                    <span className="font-semibold">{formatDate(checkIn)}</span>
-                  </div>
-                  <div>
-                    <span className="text-xs text-slate-400 block">เช็คเอาต์</span>
-                    <span className="font-semibold">{formatDate(checkOut)}</span>
-                  </div>
-                  {totalAmount != null && (
-                    <div className="ml-auto text-right">
-                      <span className="text-xs text-slate-400 block">ยอดรวม</span>
-                      <span className="font-black text-slate-900">฿{Number(totalAmount).toLocaleString()}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Link to hotel */}
-                {(booking.hotelId ?? booking.property_id ?? booking.propertyId) && (
-                  <div className="mt-4 pt-3 border-t border-slate-100">
-                    <Link
-                      to={`/hotels/${booking.hotelId ?? booking.property_id ?? booking.propertyId}`}
-                      className="text-xs font-semibold text-blue-600 hover:underline"
-                    >
-                      ดูรายละเอียดที่พัก →
-                    </Link>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <ConfirmDialog
+        open={Boolean(cancelTarget)}
+        title={tx('ยกเลิกการจองนี้?', 'Cancel this booking?')}
+        message={cancelTarget && (
+          <>
+            <p><b>{cancelTarget.hotel.name}</b> · {cancelTarget.reference}</p>
+            <p className="mt-1">
+              {cancelTarget.paymentStatus === 'Paid'
+                ? tx(`ระบบจะคืนเงิน ${formatPrice(cancelTarget.totalAmount)} และห้องจะถูกปล่อยให้ผู้อื่นจอง`, `We'll refund ${formatPrice(cancelTarget.totalAmount)} and release the room.`)
+                : tx('ห้องที่ถือไว้จะถูกปล่อยให้ผู้อื่นจอง', 'The held room will be released.')}
+            </p>
+          </>
+        )}
+        confirmLabel={tx('ยืนยันการยกเลิก', 'Yes, cancel')}
+        loading={cancelling}
+        error={cancelError}
+        onConfirm={confirmCancel}
+        onClose={() => { setCancelTarget(null); setCancelError(''); }}
+      />
     </div>
   );
 }
