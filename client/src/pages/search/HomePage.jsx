@@ -1,571 +1,184 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../api.js';
+import Icon from '../../components/Icon.jsx';
+import Stars from '../../components/Stars.jsx';
+import SmartImage from '../../components/SmartImage.jsx';
+import FavoriteButton from '../../components/FavoriteButton.jsx';
+import SearchBar, { buildSearchParams, loadDestinations } from '../../components/SearchBar.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
+import { HERO_IMAGE, addDays, cityImage, cityLabel, ratingLabel, sizedImage, todayISO } from '../../lib/format.js';
 
-const HOTEL_IMAGES = [
-  'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=800&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=800&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=800&auto=format&fit=crop&q=80'
-];
-
-const POPULAR_DESTINATIONS = ['Bangkok', 'Chiang Mai', 'Phuket', 'Pattaya', 'Hua Hin'];
-
-function formatLocalizedAddress(address = '', city = '', lang = 'th') {
-  if (lang === 'th') {
-    return address || city;
-  }
-
-  const dict = [
-    // ชื่อเมือง/จังหวัด
-    { th: 'กรุงเทพมหานคร', en: 'Bangkok' },
-    { th: 'กรุงเทพฯ', en: 'Bangkok' },
-    { th: 'เชียงใหม่', en: 'Chiang Mai' },
-    { th: 'ภูเก็ต', en: 'Phuket' },
-    { th: 'พัทยา', en: 'Pattaya' },
-    { th: 'หัวหิน', en: 'Hua Hin' },
-    { th: 'ชลบุรี', en: 'Chonburi' },
-
-    // อำเภอ / ตำบล / สถานที่
-    { th: 'แม่ริม', en: 'Mae Rim' },
-    { th: 'กะทู้', en: 'Kathu' },
-    { th: 'ป่าตอง', en: 'Patong' },
-    { th: 'หาด', en: 'Beach ' },
-    { th: 'หมู่', en: 'Moo' },
-
-    // ถนน / ซอย / เขต
-    { th: 'ถนนสาทรเหนือ', en: 'North Sathorn Rd.' },
-    { th: 'ถนนสาทร', en: 'Sathorn Rd.' },
-    { th: 'ถนน', en: 'Rd.' },
-    { th: 'ซอย', en: 'Soi' },
-    { th: 'สีลม', en: 'Silom' },
-    { th: 'บางรัก', en: 'Bang Rak' },
-    { th: 'สุขุมวิท', en: 'Sukhumvit' },
-    { th: 'นิมมานเหมินท์', en: 'Nimman' },
-  ];
-
-  let result = address || city || '';
-  dict.forEach(({ th, en }) => {
-    result = result.replaceAll(th, en);
-  });
-
-  return result;
+// วันศุกร์ที่จะถึง (ถ้าวันนี้ศุกร์/เสาร์ ใช้สัปดาห์นี้) → ทางลัด "สุดสัปดาห์นี้"
+function upcomingWeekend() {
+  const today = todayISO();
+  const day = new Date().getDay(); // 0 = อาทิตย์
+  const toFriday = day === 6 ? -1 : (5 - day + 7) % 7;
+  const friday = addDays(today, toFriday);
+  return { checkIn: friday < today ? today : friday, checkOut: addDays(friday, 2) };
 }
 
-// ฟังก์ชันแปลงรูปแบบวันที่ตามภาษาที่เลือก
-function formatDateDisplay(dateStr, lang, placeholder) {
-  if (!dateStr) return placeholder;
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return placeholder;
-
-  return d.toLocaleDateString(lang === 'th' ? 'th-TH' : 'en-US', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric'
-  });
-}
-
-// คอมโพเนนต์ปฏิทินแบบกำหนดภาษาได้เอง (TH / EN)
-function CustomDatePickerModal({ lang, checkIn, checkOut, onSelectDate, onClose }) {
-  const [viewDate, setViewDate] = useState(() => {
-    return checkIn ? new Date(checkIn) : new Date();
-  });
-
-  const year = viewDate.getFullYear();
-  const month = viewDate.getMonth();
-
-  const monthNamesTh = [
-    'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
-    'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
-  ];
-  const monthNamesEn = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ];
-  const daysTh = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
-  const daysEn = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
-
-  const monthLabel = lang === 'th' ? `${monthNamesTh[month]} ${year}` : `${monthNamesEn[month]} ${year}`;
-  const dayLabels = lang === 'th' ? daysTh : daysEn;
-
-  // วันแรกของเดือน และจำนวนวันในเดือน
-  const firstDayIndex = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-  const handlePrevMonth = () => {
-    setViewDate(new Date(year, month - 1, 1));
-  };
-
-  const handleNextMonth = () => {
-    setViewDate(new Date(year, month + 1, 1));
-  };
-
-  const handleDateClick = (dayNum) => {
-    const formattedDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
-    onSelectDate(formattedDate);
-  };
-
+function FeaturedHotel({ hotel }) {
+  const { lang, tx, formatPrice } = useLanguage();
   return (
-    <div className="absolute top-full left-0 mt-2 z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 w-72 sm:w-80 select-none animate-in fade-in zoom-in-95 duration-150">
-      {/* Header เดือน และปุ่มเลื่อนเดือน */}
-      <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-        <button
-          type="button"
-          onClick={handlePrevMonth}
-          className="p-1 rounded-lg hover:bg-slate-100 text-slate-600 transition"
-        >
-          ‹
-        </button>
-        <span className="font-bold text-sm text-slate-800">{monthLabel}</span>
-        <button
-          type="button"
-          onClick={handleNextMonth}
-          className="p-1 rounded-lg hover:bg-slate-100 text-slate-600 transition"
-        >
-          ›
-        </button>
+    <Link
+      to={`/hotels/${hotel.id}`}
+      className="group flex flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white transition duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-slate-900/10"
+    >
+      <div className="relative">
+        <SmartImage src={hotel.imageUrl} alt={hotel.name} width={640} className="aspect-[4/3]" imgClassName="transition duration-700 group-hover:scale-105" />
+        <FavoriteButton hotelId={hotel.id} className="absolute left-3 top-3" />
+        {hotel.rating !== null && (
+          <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-xs font-bold text-slate-900 shadow-sm">
+            <Icon name="star" filled className="h-3.5 w-3.5 text-amber-400" strokeWidth={1.5} />
+            {hotel.rating.toFixed(1)}
+            <span className="font-medium text-slate-500">· {ratingLabel(hotel.rating, lang)}</span>
+          </span>
+        )}
       </div>
-
-      {/* วันในสัปดาห์ */}
-      <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-slate-400 py-2">
-        {dayLabels.map((d, i) => (
-          <span key={i}>{d}</span>
-        ))}
+      <div className="flex flex-1 flex-col p-5">
+        <Stars value={hotel.stars} className="h-3 w-3" />
+        <p className="mt-1.5 line-clamp-1 text-base font-extrabold text-slate-900 group-hover:text-brand-700">{hotel.name}</p>
+        <p className="mt-0.5 text-sm text-slate-500">{cityLabel(hotel.city, lang)} · {hotel.type}</p>
+        <p className="mt-auto pt-4 text-sm text-slate-500">
+          {tx('เริ่มต้น', 'From')} <span className="text-lg font-black text-slate-900">{formatPrice(hotel.nightlyFrom)}</span> / {tx('คืน', 'night')}
+        </p>
       </div>
-
-      {/* วันที่ 1 - 31 */}
-      <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium">
-        {Array.from({ length: firstDayIndex }).map((_, i) => (
-          <div key={`empty-${i}`} />
-        ))}
-        {Array.from({ length: daysInMonth }).map((_, i) => {
-          const dayNum = i + 1;
-          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
-          const isCheckIn = checkIn === dateStr;
-          const isCheckOut = checkOut === dateStr;
-          const isInRange = checkIn && checkOut && dateStr > checkIn && dateStr < checkOut;
-
-          return (
-            <button
-              key={dayNum}
-              type="button"
-              onClick={() => handleDateClick(dayNum)}
-              className={`h-8 w-8 mx-auto rounded-lg flex items-center justify-center transition ${
-                isCheckIn || isCheckOut
-                  ? 'bg-blue-600 text-white font-bold shadow-xs'
-                  : isInRange
-                  ? 'bg-blue-50 text-blue-700 font-semibold'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              {dayNum}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Footer ปุ่มปิด / ล้างค่า */}
-      <div className="flex items-center justify-between pt-3 mt-2 border-t border-slate-100 text-xs">
-        <button
-          type="button"
-          onClick={() => {
-            onSelectDate('clear');
-          }}
-          className="text-slate-400 hover:text-slate-600 font-medium"
-        >
-          {lang === 'th' ? 'ล้าง' : 'Clear'}
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="font-bold text-blue-600 hover:underline"
-        >
-          {lang === 'th' ? 'เสร็จสิ้น' : 'Done'}
-        </button>
-      </div>
-    </div>
+    </Link>
   );
 }
 
 export default function HomePage() {
-  const navigate = useNavigate();
-  const { t, lang, formatPrice } = useLanguage();
-  
-
-  // Search & Filter State
-  const [city, setCity] = useState('');
-  const [stars, setStars] = useState('');
-  const [minPrice, setMinPrice] = useState('');
-  const [maxPrice, setMaxPrice] = useState('');
-  const [sort, setSort] = useState('');
-  
-  // Date & Guests State
-  const [checkIn, setCheckIn] = useState('');
-  const [checkOut, setCheckOut] = useState('');
-  const [guests, setGuests] = useState('2');
-  const [activePicker, setActivePicker] = useState(null); // 'checkIn' | 'checkOut' | null
-
-  // Select
-  const handleSelectDateFromPicker = (selectedDate) => {
-    if (selectedDate === 'clear') {
-      setCheckIn('');
-      setCheckOut('');
-      return;
-    }
-    if (activePicker === 'checkIn') {
-      setCheckIn(selectedDate);
-      if (checkOut && selectedDate >= checkOut) {
-        setCheckOut('');
-      }
-      setActivePicker('checkOut'); // เลือก Check-in เสร็จ เลื่อนไปถาม Check-out อัตโนมัติ
-    } else {
-      if (checkIn && selectedDate <= checkIn) {
-        setCheckIn(selectedDate);
-        setCheckOut('');
-      } else {
-        setCheckOut(selectedDate);
-        setActivePicker(null); // เลือกครบทั้งคู่แล้วปิด Popup
-      }
-    }
-  };
-
-  const [hotels, setHotels] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  const fetchHotels = async (targetCity = city) => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const params = new URLSearchParams();
-      if (targetCity) params.append('city', targetCity);
-      if (stars) params.append('stars', stars);
-      if (minPrice) params.append('minPrice', minPrice);
-      if (maxPrice) params.append('maxPrice', maxPrice);
-      if (sort) params.append('sort', sort);
-
-      const queryString = params.toString() ? `?${params.toString()}` : '';
-      const data = await api(`/hotels${queryString}`);
-      setHotels(data || []);
-    } catch (err) {
-      setError(err.message || 'ระบบไม่สามารถดึงข้อมูลได้ในขณะนี้');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { lang, tx, formatPrice } = useLanguage();
+  const [destinations, setDestinations] = useState([]);
+  const [featured, setFeatured] = useState([]);
 
   useEffect(() => {
-    fetchHotels();
+    loadDestinations().then(setDestinations);
+    api('/hotels?sort=rating_desc&limit=8')
+      .then((data) => setFeatured(data.hotels || []))
+      .catch(() => setFeatured([]));
   }, []);
 
-  const handleSearchSubmit = (e) => {
-    e.preventDefault();
-    fetchHotels();
-  };
-
-  const handleQuickDestination = (destName) => {
-    setCity(destName);
-    fetchHotels(destName);
-  };
-
-  const handleResetFilters = () => {
-    setCity('');
-    setStars('');
-    setMinPrice('');
-    setMaxPrice('');
-    setSort('');
-    api('/hotels').then((data) => setHotels(data || []));
-  };
-
-  const goToDetail = (hotelId) => {
-    const params = new URLSearchParams();
-    if (checkIn) params.append('checkIn', checkIn);
-    if (checkOut) params.append('checkOut', checkOut);
-    if (guests) params.append('guests', guests);
-    navigate(`/hotels/${hotelId}${params.toString() ? `?${params.toString()}` : ''}`);
-  };
+  const weekend = upcomingWeekend();
+  const weekendLink = `/search?${buildSearchParams({ ...weekend, adults: 2 })}`;
 
   return (
-    <div className="min-h-screen bg-[#f4f6f8] text-slate-800 font-sans pb-20">
-      
-      {/* Header Banner */}
-      <section 
-        className="relative bg-cover bg-center bg-no-repeat text-white pt-8 pb-20 md:pt-12 md:pb-24 px-4 sm:px-6"
-        style={{
-          backgroundImage: `url('https://images.unsplash.com/photo-1571003123894-1f0594d2b5d9?w=1600&auto=format&fit=crop&q=80')`
-        }}
-      >
-        <div className="absolute inset-0 bg-gradient-to-b from-[#0a2f64]/85 via-[#0d3b7d]/80 to-[#124b99]/90" />
-
-        <div className="relative z-10 max-w-6xl mx-auto">
-          <div className="mb-5 sm:mb-6">
-            <span className="inline-flex items-center gap-1.5 bg-[#febb02] text-slate-950 text-[10px] sm:text-[11px] font-black px-2.5 py-1 rounded shadow-xs tracking-wide uppercase">
-              {t('badge_best_price')}
+    <div className="pb-8">
+      {/* ===== Hero ===== */}
+      {/* z-10: isolate ทำให้ hero เป็นชั้นของตัวเอง ต้องยกทั้งก้อนขึ้น
+          ไม่งั้น dropdown/ปฏิทินของกล่องค้นหาจะถูกการ์ดเมืองด้านล่างทับ */}
+      <section className="relative isolate z-10">
+        <div className="absolute inset-0 -z-10 overflow-hidden">
+          <img src={sizedImage(HERO_IMAGE, 1920)} alt="" className="h-full w-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-b from-brand-950/70 via-brand-900/50 to-slate-50" />
+        </div>
+        <div className="mx-auto max-w-6xl px-4 pb-16 pt-16 sm:px-6 sm:pt-24 lg:pb-24">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/10 px-3 py-1 text-xs font-semibold text-white backdrop-blur">
+            <Icon name="zap" className="h-3.5 w-3.5 text-amber-300" />
+            {tx('ยืนยันการจองทันที · ยกเลิกฟรีก่อนวันเข้าพัก', 'Instant confirmation · Free cancellation before check-in')}
+          </span>
+          <h1 className="mt-5 max-w-3xl text-4xl font-black leading-[1.1] tracking-tight text-white drop-shadow-sm sm:text-5xl lg:text-6xl">
+            {tx('เที่ยวไทยครั้งต่อไป', 'Your next Thai getaway')}
+            <br />
+            <span className="bg-gradient-to-r from-amber-200 via-white to-sky-200 bg-clip-text text-transparent">
+              {tx('เริ่มที่ที่พักดีๆ', 'starts with the right stay')}
             </span>
-            <h1 className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight mt-2.5 leading-tight drop-shadow-md">
-              {t('hero_title')}
-            </h1>
-            <p className="text-blue-100 text-xs sm:text-sm md:text-base mt-2 font-normal drop-shadow-sm">
-              {t('hero_subtitle')}
-            </p>
+          </h1>
+          <p className="mt-4 max-w-xl text-base text-white/85 sm:text-lg">
+            {tx('ค้นหาโรงแรม รีสอร์ท และวิลล่าทั่วไทย เทียบราคารายคืนตามวันที่คุณเลือก แล้วจองได้ในไม่กี่ขั้นตอน', 'Search hotels, resorts and villas across Thailand, compare nightly prices for your dates, and book in a few steps.')}
+          </p>
+
+          <div className="mt-8">
+            <SearchBar variant="hero" />
           </div>
 
-          <div className="flex items-center gap-2 text-xs flex-wrap overflow-x-auto pb-1">
-            <span className="text-blue-200 font-medium whitespace-nowrap">{t('popular_destinations')}</span>
-            {POPULAR_DESTINATIONS.map((dest) => (
-              <button
-                key={dest}
-                type="button"
-                onClick={() => handleQuickDestination(dest)}
-                className={`px-3 py-1 rounded-full border text-xs whitespace-nowrap backdrop-blur-md transition ${
-                  city.toLowerCase() === dest.toLowerCase()
-                    ? 'bg-white text-blue-900 border-white font-bold shadow-sm'
-                    : 'border-white/30 text-white hover:bg-white/20 hover:border-white'
-                }`}
-              >
-                {dest}
-              </button>
+          {/* ทางลัด — ใช้ชิปพื้นขาว อ่านออกทั้งบนรูปมืดและส่วนที่ไล่สีเป็นพื้นหลังสว่าง */}
+          <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+            <Link to={weekendLink} className="rounded-full bg-white/90 px-3.5 py-1.5 font-semibold text-slate-800 shadow-sm backdrop-blur transition hover:bg-white">
+              🌴 {tx('สุดสัปดาห์นี้', 'This weekend')}
+            </Link>
+            {['Phuket', 'Chiang Mai', 'Krabi'].map((city) => (
+              <Link key={city} to={`/search?q=${encodeURIComponent(city)}&adults=2`} className="rounded-full bg-white/90 px-3.5 py-1.5 font-semibold text-slate-800 shadow-sm backdrop-blur transition hover:bg-white">
+                {cityLabel(city, lang)}
+              </Link>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Floating Search Bar */}
-      <div className="relative z-20 max-w-6xl mx-auto px-4 sm:px-6 -mt-10 sm:-mt-12">
-        <form onSubmit={handleSearchSubmit} className="bg-white p-3 sm:p-4 rounded-2xl shadow-xl border border-slate-200/80 grid grid-cols-1 md:grid-cols-12 gap-2.5 sm:gap-3 items-center">
-          <div className="md:col-span-4 bg-slate-50 hover:bg-slate-100/80 focus-within:bg-white focus-within:border-blue-600 rounded-xl border border-slate-200 p-2.5 transition">
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-              {t('search_dest_label')}
-            </label>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-slate-400 text-sm">📍</span>
-              <input
-                type="text"
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                placeholder={t('search_dest_placeholder')}
-                className="w-full bg-transparent text-slate-900 text-sm font-semibold outline-none placeholder:font-normal placeholder:text-slate-400"
-              />
-              {city && <button type="button" onClick={() => setCity('')} className="text-slate-400 hover:text-slate-600 text-xs">✕</button>}
-            </div>
+      {/* ===== จุดหมายยอดนิยม ===== */}
+      <section className="mx-auto max-w-6xl px-4 sm:px-6">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">{tx('จุดหมายยอดนิยม', 'Trending destinations')}</h2>
+            <p className="mt-1 text-sm text-slate-500">{tx('เมืองที่นักเดินทางค้นหามากที่สุด', 'Where travellers are heading')}</p>
           </div>
-
-          {/* วันเช็คอิน - เช็คเอาท์ (คลิกได้ทั่วทั้งช่อง + สลับภาษา TH/EN สมบูรณ์) */}
-          {/* วันเช็คอิน - เช็คเอาท์ (Custom Popover รองรับภาษา TH และ EN 100%) */}
-          <div className="relative md:col-span-4 lg:col-span-3 bg-slate-50 hover:bg-slate-100/80 focus-within:bg-white focus-within:border-blue-600 rounded-xl border border-slate-200 p-2.5 transition">
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-              {t('search_dates_label')}
-            </label>
-            <div className="flex items-center gap-1 mt-0.5">
-              
-              {/* ปุ่ม Check-in */}
-              <button
-                type="button"
-                onClick={() => setActivePicker(activePicker === 'checkIn' ? null : 'checkIn')}
-                className={`w-1/2 text-left text-xs font-semibold truncate ${
-                  checkIn ? 'text-slate-800' : 'text-slate-400 font-normal'
-                }`}
-              >
-                {formatDateDisplay(checkIn, lang, lang === 'th' ? 'วันเช็คอิน' : 'Check-in')}
-              </button>
-
-              <span className="text-slate-300">|</span>
-
-              {/* ปุ่ม Check-out */}
-              <button
-                type="button"
-                onClick={() => setActivePicker(activePicker === 'checkOut' ? null : 'checkOut')}
-                className={`w-1/2 text-left text-xs font-semibold truncate ${
-                  checkOut ? 'text-slate-800' : 'text-slate-400 font-normal'
-                }`}
-              >
-                {formatDateDisplay(checkOut, lang, lang === 'th' ? 'วันเช็คเอาท์' : 'Check-out')}
-              </button>
-
-              <span 
-                onClick={() => setActivePicker(activePicker ? null : 'checkIn')} 
-                className="text-slate-400 text-xs cursor-pointer hover:text-slate-600"
-              >
-                📅
-              </span>
-            </div>
-
-            {/* Popup ปฏิทินแสดงผลตามภาษาที่เลือก */}
-            {activePicker && (
-              <CustomDatePickerModal
-                lang={lang}
-                checkIn={checkIn}
-                checkOut={checkOut}
-                onSelectDate={handleSelectDateFromPicker}
-                onClose={() => setActivePicker(null)}
-              />
-            )}
-          </div>
-        </form>
-      </div>
-
-      {/* Main Container */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 mt-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-
-          {/* Sidebar */}
-          <aside className="lg:col-span-1">
-            <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs sticky top-20 space-y-5">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                <span className="font-extrabold text-slate-800 text-sm tracking-wide flex items-center gap-1.5">
-                  <span>🎯</span> {t('filter_title')}
-                </span>
-                <button type="button" onClick={handleResetFilters} className="text-xs text-blue-600 hover:underline font-semibold">
-                  {t('filter_reset')}
-                </button>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">
-                  {t('filter_sort_label')}
-                </label>
-                <select value={sort} onChange={(e) => setSort(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:border-blue-500">
-                  <option value="">{t('sort_recommended')}</option>
-                  <option value="price_asc">{t('sort_price_asc')}</option>
-                  <option value="price_desc">{t('sort_price_desc')}</option>
-                  <option value="stars_desc">{t('sort_stars_desc')}</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">
-                  {t('filter_stars_label')}
-                </label>
-                <div className="space-y-1 sm:space-y-1.5">
-                  {[
-                    { label: t('star_opt_5'), val: '5' },
-                    { label: t('star_opt_4'), val: '4' },
-                    { label: t('star_opt_3'), val: '3' },
-                    { label: t('star_opt_all'), val: '' },
-                  ].map((item) => (
-                    <label key={item.val} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer text-xs text-slate-700 select-none">
-                      <input type="radio" name="stars" checked={stars === item.val} onChange={() => setStars(item.val)} className="text-blue-600 accent-blue-600" />
-                      <span>{item.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">
-                  {t('filter_budget_label')}
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <input type="number" value={minPrice} onChange={(e) => setMinPrice(e.target.value)} placeholder={t('filter_min')} className="p-2 border border-slate-200 rounded-lg text-xs outline-none focus:border-blue-500 w-full" />
-                  <input type="number" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} placeholder={t('filter_max')} className="p-2 border border-slate-200 rounded-lg text-xs outline-none focus:border-blue-500 w-full" />
-                </div>
-              </div>
-
-              <button type="button" onClick={() => fetchHotels()} className="w-full py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl transition shadow-xs">
-                {t('btn_apply_filter')}
-              </button>
-            </div>
-          </aside>
-
-          {/* List */}
-          <main className="lg:col-span-3 space-y-4">
-            <div className="flex items-center justify-between pb-1">
-              <span className="text-sm font-bold text-slate-700">
-                {t('results_found_prefix')} {city && <span className="text-blue-600 font-extrabold">"{city}"</span>}
-              </span>
-              <span className="text-xs text-slate-500 font-medium">
-                {t('results_count_prefix')} {hotels.length} {t('results_count_suffix')}
-              </span>
-            </div>
-
-            {loading && <div className="p-8 text-center text-xs text-slate-400">{t('loading_hotels')}</div>}
-            
-            {!loading && !error && hotels.length === 0 && (
-              <div className="bg-white rounded-2xl border border-slate-200 p-8 sm:p-12 text-center text-slate-500">
-                <span className="text-4xl block mb-2">🏖️</span>
-                <p className="font-bold text-base text-slate-700">{t('no_hotels_found')}</p>
-                <p className="text-xs mt-1">{t('no_hotels_sub')}</p>
-              </div>
-            )}
-
-            {!loading && hotels.map((hotel, index) => {
-              const rating = hotel.stars ? (Number(hotel.stars) * 1.8).toFixed(1) : '8.6';
-              const imgUrl = HOTEL_IMAGES[index % HOTEL_IMAGES.length];
-
-              return (
-                <div key={hotel.id} className="group bg-white rounded-2xl border border-slate-200 hover:border-blue-400 hover:shadow-lg transition-all duration-200 flex flex-col sm:flex-row overflow-hidden">
-                  <div className="relative w-full sm:w-56 md:w-64 h-48 sm:h-auto overflow-hidden bg-slate-100 flex-shrink-0">
-                    <img src={imgUrl} alt={hotel.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out" />
-                    <div className="absolute top-3 left-3 bg-rose-600 text-white text-[10px] font-black px-2.5 py-0.5 rounded shadow-xs uppercase tracking-wide">
-                      {t('badge_special_deal')}
-                    </div>
-                  </div>
-
-                  <div className="flex-1 p-4 sm:p-5 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center gap-1.5 text-amber-500 text-xs">
-                        {'★'.repeat(Math.round(Number(hotel.stars) || 0))}
-                        <span className="text-[11px] font-semibold text-slate-400 ml-1">
-                          • {hotel.property_type || t('verified_hotel')}
-                        </span>
-                      </div>
-                      <h2 className="text-base sm:text-lg font-extrabold text-slate-900 group-hover:text-blue-700 transition mt-1 leading-snug">
-                        {hotel.name}
-                      </h2>
-                      <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
-                        <span>📍</span> {formatLocalizedAddress(hotel.address, hotel.city, lang)}
-                      </p>
-
-                      <div className="flex flex-wrap gap-1.5 mt-3">
-                        <span className="text-[10px] sm:text-[11px] font-semibold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md border border-emerald-200/60">
-                          {t('perk_breakfast')}
-                        </span>
-                        <span className="text-[10px] sm:text-[11px] font-semibold bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md border border-blue-200/60">
-                          {t('perk_free_cancel')}
-                        </span>
-                        <span className="text-[10px] sm:text-[11px] font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">
-                          {t('perk_wifi')}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-100">
-                      <div className="bg-[#003580] text-white font-black text-xs px-2.5 py-1 rounded-md">
-                        {rating}
-                      </div>
-                      <div className="text-[11px]">
-                        <span className="font-bold text-slate-800">{t('review_excellent')}</span>
-                        <span className="text-slate-400 ml-1">{t('review_sub')}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="w-full sm:w-48 md:w-56 p-4 sm:p-5 bg-slate-50/70 border-t sm:border-t-0 sm:border-l border-slate-100 flex flex-row sm:flex-col justify-between items-center sm:items-end text-left sm:text-right flex-shrink-0 gap-3">
-                    <div>
-                      <div className="text-[10px] sm:text-[11px] text-slate-400 line-through">
-                        {formatPrice(Number(hotel.min_price || 2000) * 1.3)}
-                      </div>
-                      <div className="text-xl sm:text-2xl font-black text-[#d4111e] leading-none mt-0.5">
-                        {formatPrice(hotel.min_price || 0)}
-                      </div>
-                      <span className="text-[9px] sm:text-[10px] text-slate-500 block mt-0.5">
-                        {t('per_room_night')}
-                      </span>
-                    </div>
-
-                    <button type="button" onClick={() => goToDetail(hotel.id)} className="w-auto sm:w-full py-2.5 px-5 sm:px-4 bg-[#0071c2] hover:bg-[#005999] active:scale-[0.98] text-white text-xs font-bold rounded-xl transition duration-150 flex items-center justify-center gap-1 shadow-xs flex-shrink-0">
-                      {t('btn_select_room')}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </main>
+          <Link to="/search" className="hidden items-center gap-1 text-sm font-bold text-brand-600 hover:text-brand-700 sm:inline-flex">
+            {tx('ดูที่พักทั้งหมด', 'View all stays')} <Icon name="arrow-right" className="h-4 w-4" />
+          </Link>
         </div>
-      </div>
+
+        <div className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
+          {destinations.slice(0, 5).map((d, index) => (
+            <Link
+              key={d.city}
+              to={`/search?q=${encodeURIComponent(d.city)}&adults=2`}
+              className={`group relative isolate overflow-hidden rounded-3xl ${index === 0 ? 'col-span-2 row-span-2 min-h-72 md:min-h-96' : 'min-h-40 md:min-h-44'}`}
+            >
+              <SmartImage src={cityImage(d.city)} alt={d.city} width={index === 0 ? 1000 : 500} className="absolute inset-0 -z-10" imgClassName="transition duration-700 group-hover:scale-110" />
+              <div className="absolute inset-0 -z-10 bg-gradient-to-t from-slate-950/80 via-slate-950/20 to-transparent" />
+              <div className="flex h-full flex-col justify-end p-4 sm:p-5">
+                <p className={`font-black text-white ${index === 0 ? 'text-3xl' : 'text-lg'}`}>{cityLabel(d.city, lang)}</p>
+                <p className="text-xs font-medium text-white/80 sm:text-sm">
+                  {d.hotels} {tx('ที่พัก', 'stays')} · {tx('เริ่ม', 'from')} {formatPrice(d.minPrice)}
+                </p>
+              </div>
+            </Link>
+          ))}
+          {destinations.length === 0 && Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className={`animate-pulse rounded-3xl bg-slate-200 ${i === 0 ? 'col-span-2 row-span-2 min-h-72 md:min-h-96' : 'min-h-40'}`} />
+          ))}
+        </div>
+      </section>
+
+      {/* ===== ที่พักคะแนนรีวิวสูง ===== */}
+      <section className="mx-auto mt-16 max-w-6xl px-4 sm:px-6">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">{tx('ที่พักคะแนนรีวิวสูงสุด', 'Top-rated stays')}</h2>
+            <p className="mt-1 text-sm text-slate-500">{tx('คัดจากรีวิวจริงของผู้เข้าพัก', 'Picked from real guest reviews')}</p>
+          </div>
+          <Link to="/search?sort=rating_desc" className="hidden items-center gap-1 text-sm font-bold text-brand-600 hover:text-brand-700 sm:inline-flex">
+            {tx('ดูเพิ่มเติม', 'See more')} <Icon name="arrow-right" className="h-4 w-4" />
+          </Link>
+        </div>
+        <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {featured.map((hotel) => <FeaturedHotel key={hotel.id} hotel={hotel} />)}
+          {featured.length === 0 && Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-80 animate-pulse rounded-3xl bg-slate-200" />
+          ))}
+        </div>
+      </section>
+
+      {/* ===== ทำไมต้องจองกับเรา ===== */}
+      <section className="mx-auto mt-16 max-w-6xl px-4 sm:px-6">
+        <div className="grid gap-4 rounded-[2rem] bg-gradient-to-br from-brand-600 via-brand-700 to-brand-900 p-6 text-white shadow-xl shadow-brand-900/20 sm:p-10 md:grid-cols-3">
+          {[
+            { icon: 'zap', title: tx('ยืนยันทันที', 'Instant confirmation'), text: tx('ระบบตรวจห้องว่างแบบเรียลไทม์ จองแล้วได้ห้องแน่นอน ไม่มีจองซ้อน', 'Real-time availability — once you book, the room is yours. No double bookings.') },
+            { icon: 'receipt', title: tx('ราคาโปร่งใส', 'Transparent pricing'), text: tx('เห็นราคารายคืนตามวันที่เข้าพักจริง รวมภาษีแล้ว ไม่มีค่าใช้จ่ายแอบแฝง', 'See the real nightly price for your dates with taxes included.') },
+            { icon: 'shield', title: tx('ยกเลิกได้ยืดหยุ่น', 'Flexible cancellation'), text: tx('ยกเลิกฟรีก่อนวันเช็กอิน และขอคืนเงินอัตโนมัติ', 'Cancel for free before check-in with an automatic refund.') },
+          ].map((item) => (
+            <div key={item.title} className="rounded-2xl bg-white/10 p-5 ring-1 ring-white/15 backdrop-blur">
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15">
+                <Icon name={item.icon} className="h-6 w-6" />
+              </span>
+              <p className="mt-4 text-lg font-bold">{item.title}</p>
+              <p className="mt-1 text-sm text-white/80">{item.text}</p>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
