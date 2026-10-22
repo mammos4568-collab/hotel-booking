@@ -167,8 +167,11 @@ export function LanguageProvider({ children }) {
     return text;
   };
 
+  // ข้อความสองภาษาแบบเขียนติดกับที่ใช้งาน: tx('จองเลย', 'Book now')
+  const tx = (th, en) => (lang === 'en' ? en : th);
+
   return (
-    <LanguageContext.Provider value={{ lang, switchLanguage, currency, switchCurrency, formatPrice, t }}>
+    <LanguageContext.Provider value={{ lang, switchLanguage, currency, switchCurrency, formatPrice, t, tx }}>
       {children}
     </LanguageContext.Provider>
   );

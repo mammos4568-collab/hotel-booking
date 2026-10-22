@@ -1,1 +1,78 @@
 @import "tailwindcss";
+
+/* ============================================================
+   ธีมกลางของทั้งเว็บ — สี/ฟอนต์/แอนิเมชันประกาศเป็นตัวแปรที่นี่ที่เดียว
+   ใช้ผ่าน class ของ Tailwind ได้เลย เช่น bg-brand-600, font-sans, animate-fade-in
+   ============================================================ */
+@theme {
+  --font-sans: "Inter", "Noto Sans Thai", ui-sans-serif, system-ui, sans-serif;
+
+  /* สีหลักของแบรนด์ (ฟ้า-คราม) */
+  --color-brand-50: #eef4ff;
+  --color-brand-100: #dbe6ff;
+  --color-brand-200: #bfd3ff;
+  --color-brand-300: #93b4ff;
+  --color-brand-400: #608bff;
+  --color-brand-500: #3b66f6;
+  --color-brand-600: #2449e8;
+  --color-brand-700: #1d39c4;
+  --color-brand-800: #1e329b;
+  --color-brand-900: #1d2f7a;
+  --color-brand-950: #151d4a;
+
+  /* สีเน้นสำหรับราคาโปร/ป้ายด่วน */
+  --color-deal-500: #f43f5e;
+  --color-deal-600: #e11d48;
+
+  --animate-fade-in: fade-in 0.2s ease-out both;
+  --animate-pop-in: pop-in 0.18s ease-out both;
+  --animate-slide-up: slide-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-slide-in-right: slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes pop-in {
+    from { opacity: 0; transform: translateY(4px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slide-in-right {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+  }
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    @apply bg-slate-50 text-slate-800;
+  }
+  ::selection {
+    @apply bg-brand-100 text-brand-900;
+  }
+  /* ข้อความบนปุ่มไม่ใช่ข้อความให้เลือก/คัดลอก — กันเคอร์เซอร์ข้อความ (caret) ไปค้างในปุ่ม
+     (เช่น ปุ่มที่ถูกถอดแล้วสร้างใหม่ตอนเปิด/ปิดแชท เบราว์เซอร์จะย้ายเคอร์เซอร์มาไว้ในข้อความของปุ่มใหม่) */
+  button {
+    @apply select-none;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-500;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
