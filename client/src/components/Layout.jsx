@@ -1,14 +1,23 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import AuthModal from './AuthModal.jsx';
+import AssistantWidget from './AssistantWidget.jsx';
+import { FavoritesProvider } from '../context/FavoritesContext.jsx';
+import Footer from './Footer.jsx';
 
 export default function Layout() {
   const { pathname } = useLocation();
-  const isHome = pathname === '/';
+  // หน้าที่จัด layout เต็มความกว้างเอง (ไม่ใช้กรอบ max-w-7xl ของ Layout)
+  const isFullBleed = pathname === '/' || pathname === '/search' || pathname.startsWith('/hotels/');
 
-  const { lang, switchLanguage, currency, switchCurrency, t } = useLanguage();
+  // เปลี่ยนหน้าแล้วเลื่อนกลับขึ้นบนสุด (ไม่งั้นหน้าใหม่จะเปิดค้างที่ตำแหน่งเลื่อนของหน้าเดิม)
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [pathname]);
+
+  const { lang, switchLanguage, currency, switchCurrency, t, tx } = useLanguage();
   const { user, logout, openAuthModal } = useAuth();
   const [isLangModalOpen, setIsLangModalOpen] = useState(false);
   const [isCurrencyModalOpen, setIsCurrencyModalOpen] = useState(false);
@@ -27,8 +36,10 @@ export default function Layout() {
   const selectedLanguage = languages.find((l) => l.code === lang) || languages[0];
 
   return (
+    // รายการโปรด (หัวใจ) ใช้ได้ทุกหน้าที่อยู่ใต้ Layout
+    <FavoritesProvider>
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800">
-      <header className="sticky top-0 z-40 bg-white border-b border-slate-200/90 shadow-xs">
+      <header className="sticky top-0 z-40 bg-white/85 backdrop-blur-md border-b border-slate-200/90 shadow-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           
           {/* Logo & Desktop Nav */}
@@ -48,6 +59,9 @@ export default function Layout() {
               </NavLink>
               <NavLink to="/my-bookings" className={({ isActive }) => `px-3.5 py-2 rounded-xl text-sm font-semibold transition ${isActive ? 'text-blue-600 bg-blue-50' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'}`}>
                 {t('nav_my_bookings')}
+              </NavLink>
+              <NavLink to="/favorites" className={({ isActive }) => `px-3.5 py-2 rounded-xl text-sm font-semibold transition ${isActive ? 'text-blue-600 bg-blue-50' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'}`}>
+                {tx('รายการโปรด', 'Favourites')}
               </NavLink>
             </nav>
           </div>
@@ -94,12 +108,15 @@ export default function Layout() {
 
           {/* Mobile Right Actions */}
           <div className="flex lg:hidden items-center gap-1.5">
+            {/* ปุ่มสกุลเงิน (มือถือ): แสดงทั้งสัญลักษณ์และรหัสสกุลเงิน เหมือนจอใหญ่ · สูง 36px กดง่าย */}
             <button
               type="button"
               onClick={() => setIsCurrencyModalOpen(true)}
-              className="text-xs font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded-md"
+              aria-label={tx(`สกุลเงิน ${currency} — กดเพื่อเปลี่ยน`, `Currency ${currency} — tap to change`)}
+              className="inline-flex h-9 items-center gap-1 rounded-lg bg-slate-100 px-2.5 text-xs font-bold text-slate-700 hover:bg-slate-200"
             >
-              {currency === 'USD' ? '$' : '฿'}
+              <span className="text-sm leading-none">{currency === 'USD' ? '$' : '฿'}</span>
+              {currency}
             </button>
 
             <button type="button" onClick={() => setIsLangModalOpen(true)} className="p-2 rounded-xl hover:bg-slate-100">
@@ -134,6 +151,14 @@ export default function Layout() {
                 <NavLink to="/my-bookings" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50">
                   <span>📋</span> {t('nav_my_bookings')}
                 </NavLink>
+                <NavLink to="/favorites" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50">
+                  <span>❤️</span> {tx('รายการโปรด', 'Favourites')}
+                </NavLink>
+                {user && ['owner', 'admin'].includes(user.role) && (
+                  <NavLink to="/admin" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50">
+                    <span>🛠️</span> {tx('หลังบ้าน', 'Back office')}
+                  </NavLink>
+                )}
               </div>
 
               <div className="pt-4 border-t border-slate-100 space-y-2">
@@ -166,9 +191,13 @@ export default function Layout() {
       )}
 
       {/* Main Outlet */}
-      <main className={`flex-1 ${isHome ? '' : 'max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6'}`}>
+      <main className={`flex-1 ${isFullBleed ? '' : 'max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6'}`}>
         <Outlet />
       </main>
+      <Footer />
+
+      {/* ผู้ช่วยแนะนำที่พัก (ไม่แสดงในหน้าแอดมิน) — วางก่อน modal อื่น ให้ modal ทับแชทได้ */}
+      {!pathname.startsWith('/admin') && <AssistantWidget />}
 
       {/* Modal สลับสกุลเงิน */}
       {isCurrencyModalOpen && (
@@ -228,5 +257,6 @@ export default function Layout() {
       )}
       <AuthModal />
     </div>
+    </FavoritesProvider>
   );
 }
