@@ -18,16 +18,6 @@ const OAUTH_PROVIDERS = [
     ),
   },
   {
-    key: 'facebook',
-    label: 'Facebook',
-    href: '/api/auth/facebook',
-    icon: (
-      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="#1877F2" aria-hidden="true">
-        <path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.41c0-3.025 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.97h-1.513c-1.491 0-1.956.93-1.956 1.886v2.267h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z" />
-      </svg>
-    ),
-  },
-  {
     key: 'github',
     label: 'GitHub',
     href: '/api/auth/github',
@@ -42,7 +32,7 @@ const OAUTH_PROVIDERS = [
 // รหัสข้อผิดพลาดที่ server ส่งกลับมาใน URL (?auth_error=google_login_failed) → ข้อความ 2 ภาษา
 //   <ช่องทาง>_link_required   อีเมลนี้มีบัญชีอยู่แล้ว ต้องล็อกอินแล้วไปเชื่อมที่หน้าโปรไฟล์
 //   <ช่องทาง>_login_failed    ผู้ให้บริการปฏิเสธ / ยืนยันตัวตนไม่ผ่าน
-//   <ช่องทาง>_not_configured  server ยังไม่ได้ใส่ Client ID / Secret (ดู README หัวข้อเข้าสู่ระบบด้วย Google / GitHub / Facebook)
+//   <ช่องทาง>_not_configured  server ยังไม่ได้ใส่ Client ID / Secret (ดู README หัวข้อเข้าสู่ระบบด้วย Google / GitHub)
 function oauthErrorMessage(code, tx) {
   const provider = OAUTH_PROVIDERS.find((p) => code.startsWith(`${p.key}_`));
   const reason = provider ? code.slice(provider.key.length + 1) : '';
@@ -200,7 +190,7 @@ export default function AuthModal() {
               <span className="text-xs text-slate-400 font-medium">{tx('หรือดำเนินการด้วย', 'or continue with')}</span>
               <div className="flex-1 border-t border-slate-200" />
             </div>
-            <div className="mt-4 grid grid-cols-3 gap-2">
+            <div className="mt-4 grid grid-cols-2 gap-2">
               {OAUTH_PROVIDERS.map((provider) => (
                 <a
                   key={provider.key}

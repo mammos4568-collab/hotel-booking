@@ -110,7 +110,8 @@ const PROVIDERS = {
         }),
       });
       const tokenData = await res.json();
-      if (!res.ok || !tokenData.access_token) throw new Error('Google token exchange failed');
+      // Google บอกเหตุผลใน tokenData.error เช่น invalid_client (Client ID/Secret ผิด), redirect_uri_mismatch, invalid_grant
+      if (!res.ok || !tokenData.access_token) throw new Error(`Google token exchange failed (${tokenData.error ?? res.status})`);
 
       const profileRes = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
         headers: { Authorization: `Bearer ${tokenData.access_token}` },
@@ -120,37 +121,6 @@ const PROVIDERS = {
         throw new Error('Google account could not be verified');
       }
       return { id: profile.sub, email: profile.email.toLowerCase(), name: profile.name, avatarUrl: profile.picture || null };
-    },
-  },
-
-  facebook: {
-    envKeys: ['FACEBOOK_APP_ID', 'FACEBOOK_APP_SECRET', 'FACEBOOK_CALLBACK_URL'],
-    authUrl: 'https://www.facebook.com/v19.0/dialog/oauth',
-    scope: 'email,public_profile',
-    async getProfile(code) {
-      const tokenRes = await fetch(
-        `https://graph.facebook.com/v19.0/oauth/access_token?${new URLSearchParams({
-          client_id: process.env.FACEBOOK_APP_ID,
-          client_secret: process.env.FACEBOOK_APP_SECRET,
-          redirect_uri: process.env.FACEBOOK_CALLBACK_URL,
-          code,
-        })}`,
-      );
-      const tokenData = await tokenRes.json();
-      if (!tokenRes.ok || !tokenData.access_token) throw new Error('Facebook token exchange failed');
-
-      const profileRes = await fetch(
-        `https://graph.facebook.com/v19.0/me?fields=id,name,email,picture.type(large)&access_token=${tokenData.access_token}`,
-      );
-      const profile = await profileRes.json();
-      if (!profileRes.ok || !profile.id) throw new Error('Facebook account could not be verified');
-      if (!profile.email) throw new Error('Facebook account has no verified email; please add one on Facebook and try again');
-      return {
-        id: profile.id,
-        email: profile.email.toLowerCase(),
-        name: profile.name,
-        avatarUrl: profile.picture?.data?.url || null,
-      };
     },
   },
 
@@ -497,7 +467,7 @@ router.put('/password', requireAuth, async (req, res, next) => {
 });
 
 // ---------------------------------------------------------------------------
-// OAuth routes — Google, Facebook, GitHub (generic handlers)
+// OAuth routes — Google, GitHub (generic handlers)
 // ---------------------------------------------------------------------------
 
 // Google
@@ -505,12 +475,6 @@ router.get('/google', startOAuth('google'));
 router.get('/google/link', requireAuth, startOAuth('google', true));
 router.get('/google/callback', handleOAuthCallback('google'));
 router.delete('/google', requireAuth, handleOAuthDisconnect('google'));
-
-// Facebook
-router.get('/facebook', startOAuth('facebook'));
-router.get('/facebook/link', requireAuth, startOAuth('facebook', true));
-router.get('/facebook/callback', handleOAuthCallback('facebook'));
-router.delete('/facebook', requireAuth, handleOAuthDisconnect('facebook'));
 
 // GitHub
 router.get('/github', startOAuth('github'));
