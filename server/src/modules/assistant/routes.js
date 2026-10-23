@@ -13,6 +13,7 @@
 import { Router } from 'express';
 import { pool } from '../../db.js';
 import { todayInBangkok } from '../../lib/dates.js';
+import { publicHotelSql } from '../../lib/hotelApproval.js';
 import { containsProfanity } from '../../lib/moderation.js';
 import { rateLimit } from '../../lib/rateLimit.js';
 import { MAX_MESSAGE_LENGTH, interpret, prepareCatalog, refine, sanitizeFilters } from './interpret.js';
@@ -31,11 +32,13 @@ let catalogCache = { loadedAt: 0, value: null };
 async function loadCatalog() {
   if (catalogCache.value && Date.now() - catalogCache.loadedAt < CATALOG_TTL_MS) return catalogCache.value;
   const [hotels, cities, capacity] = await Promise.all([
-    pool.query('SELECT property_id AS id, name, city FROM properties ORDER BY property_id'),
+    // เฉพาะโรงแรมที่อนุมัติแล้ว — ผู้ช่วยต้องไม่รู้จัก/เอ่ยชื่อโรงแรมที่ยังรอตรวจหรือถูกระงับ
+    pool.query(`SELECT p.property_id AS id, p.name, p.city FROM properties p WHERE ${publicHotelSql('p')} ORDER BY p.property_id`),
     pool.query(
       `SELECT p.city, COUNT(DISTINCT p.property_id)::int AS hotels, MIN(r.base_price_per_night)::float AS min_price
          FROM properties p
          LEFT JOIN rooms r ON r.property_id = p.property_id
+        WHERE ${publicHotelSql('p')}
         GROUP BY p.city
         ORDER BY hotels DESC, p.city`,
     ),

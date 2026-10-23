@@ -7,6 +7,7 @@ import {
   AMENITY_KEYS, PROPERTY_TYPES, SORTS, parseList, searchHotels, serializeHotel,
 } from '../../lib/hotelSearch.js';
 import { FEATURES, FEATURE_KEYS } from '../../lib/hotelFeatures.js';
+import { publicHotelSql } from '../../lib/hotelApproval.js';
 import { hotelImageUrl } from '../../lib/hotelImages.js';
 import { LANDMARK_BY_KEY } from '../../lib/landmarks.js';
 
@@ -52,6 +53,7 @@ router.get('/destinations', async (req, res, next) => {
               MIN(r.base_price_per_night)::float AS min_price
          FROM properties p
          LEFT JOIN rooms r ON r.property_id = p.property_id
+        WHERE ${publicHotelSql('p')}
         GROUP BY p.city, p.country
         ORDER BY hotels DESC, p.city`
     );
@@ -164,7 +166,7 @@ router.get('/:id', async (req, res, next) => {
            SELECT ROUND(AVG(rating), 1) AS avg_rating, COUNT(*)::int AS review_count
              FROM reviews WHERE property_id = p.property_id
          ) rv ON TRUE
-        WHERE p.property_id = $1`,
+        WHERE p.property_id = $1 AND ${publicHotelSql('p')}`, // ยังไม่อนุมัติ/ถูกระงับ = ไม่พบ (404)
       [hotelId]
     );
     const hotel = hotelResult.rows[0];

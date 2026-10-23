@@ -22,7 +22,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-agoda_db}
     volumes:
       - db_data:/var/lib/postgresql/data
-      # สร้างตาราง + ข้อมูลตัวอย่างอัตโนมัติ "ครั้งแรก" ที่ volume ยังว่าง (01 → 07 ตามลำดับชื่อไฟล์)
+      # สร้างตาราง + ข้อมูลตัวอย่างอัตโนมัติ "ครั้งแรก" ที่ volume ยังว่าง (01 → 08 ตามลำดับชื่อไฟล์)
       - ./db:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]

@@ -6,6 +6,7 @@
 // ============================================================
 import { roomAvailabilitySql } from './availability.js';
 import { nightsBetween } from './dates.js';
+import { publicHotelSql } from './hotelApproval.js';
 import { hotelCoverSql } from './hotelImages.js';
 
 // ORDER BY เลือกจาก whitelist นี้เท่านั้น — ไม่ต่อ string จากผู้ใช้เข้า SQL
@@ -121,7 +122,8 @@ export async function searchHotels(db, {
               ${distanceSql} AS distance_km
          FROM properties p
          JOIN eligible e ON e.property_id = p.property_id
-        WHERE ($4::text IS NULL
+        WHERE ${publicHotelSql('p')} -- เฉพาะโรงแรมที่ admin อนุมัติแล้ว
+          AND ($4::text IS NULL
                OR p.city ILIKE $4 OR p.name ILIKE $4 OR p.address ILIKE $4 OR p.country ILIKE $4)
           AND ($5::numeric IS NULL OR p.star_rating >= $5)
           AND ($10::text IS NULL OR LOWER(p.city) = LOWER($10))

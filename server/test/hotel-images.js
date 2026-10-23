@@ -80,6 +80,7 @@ try {
   if (!hotelId) throw new Error(`สร้างโรงแรมทดสอบไม่สำเร็จ: ${JSON.stringify(created.data)}`);
   hotelIds.push(hotelId);
   await owner.call(`/admin/hotels/${hotelId}/rooms`, 'POST', { name: 'Photo Room', maxGuests: 2, basePrice: 1200, totalRooms: 1 });
+  await admin.call(`/admin/hotels/${hotelId}/approve`, 'POST'); // โรงแรมที่ owner เพิ่มต้องอนุมัติก่อน ลูกค้าถึงจะเห็น
   const imagesPath = `/admin/hotels/${hotelId}/images`;
 
   console.log('=== 1) สิทธิ์ ===');

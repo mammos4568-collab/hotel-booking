@@ -138,13 +138,17 @@ async function inventoryTotals(req) {
   const scope = ownedBy(req, params);
   const { rows: [row] } = await pool.query(
     `SELECT (SELECT COUNT(*) FROM properties p WHERE TRUE ${scope})::int AS hotels,
+            (SELECT COUNT(*) FROM properties p WHERE p.approval_status = 'pending' ${scope})::int AS pending_hotels,
             (SELECT COUNT(*) FROM rooms r JOIN properties p ON p.property_id = r.property_id WHERE TRUE ${scope})::int AS room_types,
             (SELECT COALESCE(SUM(r.total_rooms), 0) FROM rooms r JOIN properties p ON p.property_id = r.property_id WHERE TRUE ${scope})::int AS rooms,
             (SELECT COUNT(*) FROM reviews rv JOIN properties p ON p.property_id = rv.property_id WHERE TRUE ${scope})::int AS reviews,
             (SELECT ROUND(AVG(rv.rating), 2) FROM reviews rv JOIN properties p ON p.property_id = rv.property_id WHERE TRUE ${scope})::float AS avg_rating`,
     params,
   );
-  return { hotels: row.hotels, roomTypes: row.room_types, rooms: row.rooms, reviews: row.reviews, avgRating: row.avg_rating };
+  return {
+    hotels: row.hotels, pendingHotels: row.pending_hotels, // รอ admin อนุมัติ (owner เห็นเฉพาะของตัวเอง)
+    roomTypes: row.room_types, rooms: row.rooms, reviews: row.reviews, avgRating: row.avg_rating,
+  };
 }
 
 router.get('/', async (req, res, next) => {

@@ -9,7 +9,7 @@ Stack: **React (Vite + Tailwind v4) + Express + PostgreSQL 15** รันผ่�
 
 | | ขอบเขต | ไฟล์ |
 |---|---|---|
-| **ผู้ใช้เครื่องนี้ (ตัวหลัก)** | ค้นหา, หน้าโรงแรม, **จอง, ชำระเงิน**, การจองของฉัน, รีวิว, รายการโปรด, ผู้ช่วยแนะนำที่พัก, **หลังบ้าน (แอดมิน/เจ้าของโรงแรม)**, PDPA, UI กลาง, ฐานข้อมูล, deploy | `server/src/modules/search/`, `server/src/modules/booking/`, `server/src/modules/favorites/`, `server/src/modules/assistant/`, `server/src/modules/admin/`, `server/src/modules/privacy/`, `server/src/lib/`, `server/scripts/`, `server/test/`, `client/src/pages/search/`, `client/src/pages/booking/`, `client/src/pages/admin/`, `client/src/pages/legal/`, `client/src/components/`, `client/src/context/FavoritesContext.jsx`, `client/src/lib/`, `client/src/styles.css`, `db/` (เฉพาะ `03-` ถึง `07-`), `Dockerfile`, `docker-compose.prod.yml`, `Caddyfile` |
+| **ผู้ใช้เครื่องนี้ (ตัวหลัก)** | ค้นหา, หน้าโรงแรม, **จอง, ชำระเงิน**, การจองของฉัน, รีวิว, รายการโปรด, ผู้ช่วยแนะนำที่พัก, **หลังบ้าน (แอดมิน/เจ้าของโรงแรม)**, PDPA, UI กลาง, ฐานข้อมูล, deploy | `server/src/modules/search/`, `server/src/modules/booking/`, `server/src/modules/favorites/`, `server/src/modules/assistant/`, `server/src/modules/admin/`, `server/src/modules/privacy/`, `server/src/lib/`, `server/scripts/`, `server/test/`, `client/src/pages/search/`, `client/src/pages/booking/`, `client/src/pages/admin/`, `client/src/pages/legal/`, `client/src/components/`, `client/src/context/FavoritesContext.jsx`, `client/src/lib/`, `client/src/styles.css`, `db/` (เฉพาะ `03-` ถึง `08-`), `Dockerfile`, `docker-compose.prod.yml`, `Caddyfile` |
 | **เพื่อนอีกคน** | สมัครสมาชิก/เข้าสู่ระบบ (JWT) | `server/src/modules/user/`, `server/src/middleware/auth.js`, `client/src/pages/user/` |
 
 > **ห้ามแก้ไฟล์ของเพื่อน** (`modules/user/`, `middleware/auth.js`, `pages/user/`)
@@ -41,7 +41,7 @@ Stack: **React (Vite + Tailwind v4) + Express + PostgreSQL 15** รันผ่�
 3. แก้ไฟล์ใน `db/` เมื่อไหร่ **ต้องบอกผู้ใช้ให้แจ้งเพื่อน**
    - `01-schema.sql`, `02-datas.sql` เป็นของทีม — อย่าแก้ ถ้าต้องเพิ่มตาราง/คอลัมน์ให้เพิ่มในไฟล์ใหม่
      แบบ `03-booking.sql` (ใช้ `IF NOT EXISTS` ให้รันซ้ำได้)
-   - `03-booking.sql`, `04-demo-data.sql`, `05-admin.sql`, `06-payment-gateway.sql`, `07-hotel-images.sql` รันซ้ำได้ เพื่อนอัปเดตด้วย `psql -f` ได้เลยโดยไม่ต้องลบข้อมูล (ดูวิธีรัน)
+   - `03-booking.sql`, `04-demo-data.sql`, `05-admin.sql`, `06-payment-gateway.sql`, `07-hotel-images.sql`, `08-hotel-approval.sql` รันซ้ำได้ เพื่อนอัปเดตด้วย `psql -f` ได้เลยโดยไม่ต้องลบข้อมูล (ดูวิธีรัน)
 4. ผู้ใช้เป็นนักศึกษาและกำลังเรียนอยู่ — โค้ดส่วนสำคัญ (ทรานแซกชัน, การล็อกแถว,
    การกันจองซ้อน) ให้**อธิบายเหตุผลสั้นๆ** ว่าทำไมต้องเขียนแบบนี้ ไม่ใช่โยนโค้ดให้เฉยๆ
    โปรเจกต์นี้ต้องพรีเซนต์ ผู้ใช้ต้องตอบคำถามอาจารย์ได้ทุกบรรทัด
@@ -64,8 +64,9 @@ node server/test/protection.js           # ทดสอบ rate limit / เพ�
 node server/test/favorites.js            # รายการโปรด
 node server/test/payment-methods.js      # วิธีชำระเงิน บัตร / PromptPay / TrueMoney Wallet (จำลอง)
 node server/test/assistant.js            # ผู้ช่วยแนะนำที่พัก (~120 ข้อ · ส่วนตีความไม่ต้องเปิด server)
-node server/test/admin.js                # หลังบ้าน 72 ข้อ (อ่าน server/.env เอง เพื่อตั้ง admin + ล้างข้อมูลทดสอบ)
+node server/test/admin.js                # หลังบ้าน 73 ข้อ (อ่าน server/.env เอง เพื่อตั้ง admin + ล้างข้อมูลทดสอบ)
 node server/test/hotel-images.js         # รูปโรงแรม 30 ข้อ (สูงสุด 5 รูป, ตรวจไฟล์, อัปพร้อมกัน · อ่าน server/.env เอง)
+node server/test/hotel-approval.js       # อนุมัติโรงแรม + คำหยาบ/ทับศัพท์ 56 ข้อ (อ่าน server/.env เอง)
 node --env-file=server/.env server/scripts/set-role.js <email> admin   # ตั้ง admin คนแรก (owner: เพิ่ม --hotels=1,2)
 ```
 
@@ -73,7 +74,7 @@ node --env-file=server/.env server/scripts/set-role.js <email> admin   # ตั�
 - เช็ก API http://localhost:3000/api/health
 - เข้า psql: `docker compose exec postgres psql -U agoda_admin -d agoda_db`
 - อัปเดต DB เดิมด้วยไฟล์ที่รันซ้ำได้ (ไม่ลบข้อมูล):
-  `docker compose exec -T postgres psql -U agoda_admin -d agoda_db -f /docker-entrypoint-initdb.d/03-booking.sql` (และ 04, 05, 06, 07)
+  `docker compose exec -T postgres psql -U agoda_admin -d agoda_db -f /docker-entrypoint-initdb.d/03-booking.sql` (และ 04–08)
 - `docker compose down -v` = **ลบข้อมูลทั้งหมด** ใช้เมื่อผู้ใช้สั่งเท่านั้น
 - production: `docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build` → http://localhost:8080
   (project แยกชื่อ `hotel-booking-prod` มี volume ของตัวเอง · `.env.production` ไม่ commit · ดู README หัวข้อ Deploy)
@@ -123,6 +124,10 @@ node --env-file=server/.env server/scripts/set-role.js <email> admin   # ตั�
   `checkHotelImage()` · เก็บในตาราง `property_images` · SELECT ที่แสดงรูปโรงแรมให้ใช้ `hotelCoverSql()` จาก
   `lib/hotelImages.js` (รูปอัปโหลดลำดับแรก ไม่มีใช้ `image_url`) อย่าเลือก `p.image_url` ตรงๆ — ดู `docs/admin.md` หัวข้อรูปโรงแรม
   · หน้าเพิ่มโรงแรมเก็บรูปที่เลือกไว้ในเบราว์เซอร์ แล้วอัป "ทีละรูปตามลำดับ" หลังสร้างเสร็จ (`uploadDraftPhotos()` ใน `pages/admin/HotelPhotos.jsx`)
+- อนุมัติโรงแรม: owner เพิ่ม = `pending` · admin เพิ่ม = `approved` · อนุมัติครั้งเดียวตอนสร้าง (admin ระงับได้ตลอด) ·
+  **query ฝั่งลูกค้าทุกตัวที่แตะ `properties` ต้องมี `publicHotelSql()` จาก `lib/hotelApproval.js`** (ค้นหา, หน้าโรงแรม, จอง, ขอราคา,
+  รายการโปรด, ผู้ช่วย) — ประวัติการจองของลูกค้าเองไม่ต้องกรอง · ข้อความโรงแรม/ห้องผ่าน `findProfanity()` (บล็อก) และ
+  `findSuspiciousWords()` (เตือน admin) ใน `lib/moderation.js` — คำใหม่เพิ่มที่รายการในไฟล์นั้น + ประโยคทดสอบใน `test/hotel-approval.js`
 
 ---
 
@@ -131,7 +136,8 @@ node --env-file=server/.env server/scripts/set-role.js <email> admin   # ตั�
 ```
 users(user_id, first_name, last_name, email, password_hash, phone_number, avatar_url, role, ...)   -- role ∈ user|owner|admin
 properties(property_id, name, property_type, description, country, city, address,
-           latitude, longitude, star_rating, image_url*, amenities*, owner_id†)  -- = โรงแรม (owner_id = เจ้าของ)
+           latitude, longitude, star_rating, image_url*, amenities*, owner_id†,
+           approval_status¶, approval_note¶, submitted_at¶, reviewed_at¶, reviewed_by¶)  -- = โรงแรม (owner_id = เจ้าของ)
 rooms(room_id, property_id, room_type_name, description, max_guests,
       base_price_per_night, total_rooms, image_url*, bed_type*, size_sqm*, breakfast_included*)
                                                                             -- = ประเภทห้อง (มีห้องจริง total_rooms ห้อง)
@@ -146,7 +152,7 @@ oauth_accounts(...)                                                         -- �
 admin_audit_log†(log_id, user_id, action, entity_id, detail JSONB, created_at)  -- บันทึกการทำงานหลังบ้าน
 property_images§(image_id, property_id, position, mime_type, data BYTEA, byte_size, created_at)  -- รูปโรงแรม ลำดับ 1–5 ไม่ซ้ำ
 ```
-`*` = เพิ่มใน `03-booking.sql` · `†` = เพิ่มใน `05-admin.sql` · `‡` = เพิ่มใน `06-payment-gateway.sql` · `§` = เพิ่มใน `07-hotel-images.sql`
+`*` = เพิ่มใน `03-booking.sql` · `†` = เพิ่มใน `05-admin.sql` · `‡` = เพิ่มใน `06-payment-gateway.sql` · `§` = เพิ่มใน `07-hotel-images.sql` · `¶` = เพิ่มใน `08-hotel-approval.sql`
 
 **สิ่งที่ต้องรู้เกี่ยวกับ `bookings`:**
 

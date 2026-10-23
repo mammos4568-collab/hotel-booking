@@ -1,15 +1,20 @@
 // ตรวจข้อมูลที่หลังบ้านส่งมา — รับเฉพาะค่าที่ถูกต้อง แล้วแปลงเป็นค่าที่พร้อมบันทึกลงฐานข้อมูล
 // ข้อความที่ลูกค้าจะเห็นบนหน้าเว็บ (ชื่อ คำอธิบาย) ตรวจคำไม่สุภาพด้วย
 import { AMENITY_KEYS, PROPERTY_TYPES, parseList } from '../../lib/hotelSearch.js';
-import { containsProfanity } from '../../lib/moderation.js';
+import { findProfanity } from '../../lib/moderation.js';
 import { httpError } from './scope.js';
 
+// publicText = ข้อความที่ลูกค้าเห็นบนหน้าเว็บ → มีคำหยาบชัดเจนบันทึกไม่ได้ (บอกคำที่เจอ จะได้แก้ถูกจุด)
+// คำก้ำกึ่งไม่บล็อกที่นี่ — admin เห็นคำเตือนตอนอนุมัติโรงแรม (findSuspiciousWords ใน hotels.js)
 function text(value, label, { min = 0, max, required = false, publicText = false } = {}) {
   const result = String(value ?? '').trim();
   if (!result && required) throw httpError(400, `กรุณากรอก${label}`);
   if (result && result.length < min) throw httpError(400, `${label}ต้องยาวอย่างน้อย ${min} ตัวอักษร`);
   if (result.length > max) throw httpError(400, `${label}ต้องไม่เกิน ${max} ตัวอักษร`);
-  if (publicText && containsProfanity(result)) throw httpError(400, `${label}มีถ้อยคำที่ไม่สุภาพ`);
+  if (publicText) {
+    const bad = findProfanity(result);
+    if (bad.length) throw httpError(400, `${label}มีคำที่ไม่สุภาพ (${bad.map((word) => `"${word}"`).join(', ')}) — แก้แล้วบันทึกใหม่`);
+  }
   return result || null;
 }
 
@@ -50,9 +55,9 @@ export function readHotel(body = {}) {
     name: text(body.name, 'ชื่อที่พัก', { min: 2, max: 255, required: true, publicText: true }),
     propertyType,
     description: text(body.description, 'คำอธิบาย', { max: 2000, publicText: true }),
-    country: text(body.country, 'ประเทศ', { max: 100 }) ?? 'Thailand',
-    city: text(body.city, 'เมือง', { min: 2, max: 100, required: true }),
-    address: text(body.address, 'ที่อยู่', { min: 5, max: 500, required: true }),
+    country: text(body.country, 'ประเทศ', { max: 100, publicText: true }) ?? 'Thailand',
+    city: text(body.city, 'เมือง', { min: 2, max: 100, required: true, publicText: true }),
+    address: text(body.address, 'ที่อยู่', { min: 5, max: 500, required: true, publicText: true }),
     latitude,
     longitude,
     starRating: number(body.starRating, 'ระดับดาว', { min: 1, max: 5, step: 0.5 }),

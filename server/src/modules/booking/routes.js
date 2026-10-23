@@ -4,6 +4,7 @@ import { pool } from '../../db.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { ACTIVE_BOOKING_SQL, HOLD_MINUTES, getNightlyRates, lockRoomType, summarizeStay } from '../../lib/availability.js';
 import { BOOKING_SELECT, cancelBooking, deriveStatus, findBooking, serializeBooking } from '../../lib/bookings.js';
+import { publicHotelSql } from '../../lib/hotelApproval.js';
 import { hotelCoverSql } from '../../lib/hotelImages.js';
 import { todayInBangkok, validateStay } from '../../lib/dates.js';
 import { rateLimit } from '../../lib/rateLimit.js';
@@ -89,7 +90,7 @@ router.get('/quote', async (req, res, next) => {
               r.size_sqm, r.breakfast_included,
               p.property_id, p.name, p.city, p.address, p.star_rating::float AS stars, ${hotelCoverSql('p')} AS hotel_image
          FROM rooms r JOIN properties p ON p.property_id = r.property_id
-        WHERE r.room_id = $1`,
+        WHERE r.room_id = $1 AND ${publicHotelSql('p')}`,
       [roomId]
     );
     const room = rows[0];
@@ -192,6 +193,13 @@ router.post('/', requireAuth, createLimiter, async (req, res, next) => {
     // 3) 🔒 ล็อกประเภทห้อง — คำขอที่จองประเภทห้องเดียวกันพร้อมกันจะต่อคิวอยู่ตรงนี้
     const room = await lockRoomType(client, roomId);
     if (!room) throw httpError(404, 'ไม่พบประเภทห้องนี้');
+    // โรงแรมที่ยังไม่อนุมัติ/ถูกระงับ จองไม่ได้ — หน้าเว็บไม่แสดงอยู่แล้ว แต่กันคนยิง API ด้วย roomId ตรงๆ
+    // (ตรวจหลังล็อกห้อง: ถ้า admin กดระงับพร้อมกัน ฝั่งใดฝั่งหนึ่งต้องรออีกฝั่ง COMMIT ก่อน)
+    const { rows: [hotel] } = await client.query(
+      `SELECT ${publicHotelSql('p')} AS bookable FROM properties p WHERE p.property_id = $1`,
+      [room.property_id]
+    );
+    if (!hotel?.bookable) throw httpError(404, 'ไม่พบประเภทห้องนี้');
     const tooMany = capacityError(guests, rooms, room.max_guests);
     if (tooMany) throw httpError(400, tooMany);
 

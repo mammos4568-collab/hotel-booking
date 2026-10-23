@@ -213,6 +213,22 @@ export default function DashboardPage() {
 
       {error && <p className="mb-4 text-sm text-rose-600">{error}</p>}
 
+      {/* โรงแรมรออนุมัติ: admin = คิวงานที่ต้องตรวจ · owner = โรงแรมของตัวเองที่ลูกค้ายังไม่เห็น */}
+      {totals.pendingHotels > 0 && (
+        <Link
+          to="/admin/hotels?status=pending"
+          className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 transition hover:bg-amber-100"
+        >
+          <span className="flex items-center gap-2">
+            <Icon name="clock" className="h-5 w-5 shrink-0" />
+            {user.role === 'admin'
+              ? tx(`มีโรงแรมรออนุมัติ ${totals.pendingHotels} แห่ง — ลูกค้ายังไม่เห็นจนกว่าคุณจะอนุมัติ`, `${totals.pendingHotels} hotel(s) waiting for your approval — hidden from guests until approved`)
+              : tx(`โรงแรมของคุณรอผู้ดูแลระบบอนุมัติ ${totals.pendingHotels} แห่ง`, `${totals.pendingHotels} of your hotels are waiting for admin approval`)}
+          </span>
+          <Icon name="chevron-right" className="h-4 w-4 shrink-0" />
+        </Link>
+      )}
+
       {/* ระหว่างโหลดช่วงใหม่ คงหน้าเดิมไว้แบบจางลง (ไม่กระพริบ ไม่กระโดด) */}
       <div className={`space-y-4 transition-opacity ${loading ? 'opacity-60' : ''}`}>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

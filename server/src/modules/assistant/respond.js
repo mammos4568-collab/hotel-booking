@@ -7,6 +7,7 @@
 // ============================================================
 import { pool } from '../../db.js';
 import { roomAvailabilitySql } from '../../lib/availability.js';
+import { publicHotelSql } from '../../lib/hotelApproval.js';
 import { searchHotels, serializeHotel } from '../../lib/hotelSearch.js';
 import { FEATURES, featureEvidence } from '../../lib/hotelFeatures.js';
 import { LANDMARK_BY_KEY, distanceKm } from '../../lib/landmarks.js';
@@ -460,7 +461,7 @@ async function hotelReply(result, { lang, catalog, db }) {
            SELECT ROUND(AVG(rating), 1) AS avg_rating, COUNT(*)::int AS review_count
              FROM reviews WHERE property_id = p.property_id
          ) rv ON TRUE
-        WHERE p.property_id = $1`,
+        WHERE p.property_id = $1 AND ${publicHotelSql('p')}`,
       [filters.propertyId],
     ),
     db.query(

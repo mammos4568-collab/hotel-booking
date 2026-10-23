@@ -12,6 +12,7 @@ import { AMENITIES, PROPERTY_TYPES } from '../../lib/format.js';
 import {
   Field, Modal, Notice, PageHeader, baht, buttonDanger, buttonPrimary, buttonSecondary, card, inputClass, useAdminData,
 } from './adminUi.jsx';
+import HotelApproval from './HotelApproval.jsx';
 import HotelPhotos, { HotelPhotoDraft, uploadDraftPhotos } from './HotelPhotos.jsx';
 
 const EMPTY_HOTEL = {
@@ -163,7 +164,14 @@ export default function HotelEditorPage() {
     try {
       const result = await api(id ? `/admin/hotels/${id}` : '/admin/hotels', { method: id ? 'PUT' : 'POST', body });
       if (id) {
-        setMessage({ tone: 'success', text: tx('บันทึกข้อมูลโรงแรมแล้ว', 'Hotel saved') });
+        // โรงแรมที่ไม่อนุมัติ/ถูกระงับ: เจ้าของบันทึก = ส่งให้ผู้ดูแลระบบตรวจใหม่ (server เปลี่ยนเป็นรออนุมัติให้)
+        const resubmitted = result.hotel.approval.status === 'pending' && hotel.approval.status === 'rejected';
+        setMessage({
+          tone: 'success',
+          text: resubmitted
+            ? tx('บันทึกแล้ว — ส่งให้ผู้ดูแลระบบตรวจอีกครั้ง', 'Saved — sent to the admins for another review')
+            : tx('บันทึกข้อมูลโรงแรมแล้ว', 'Hotel saved'),
+        });
         reload();
       } else {
         // ได้รหัสโรงแรมแล้ว → อัปรูปที่เลือกไว้ตามลำดับ (รูปแรก = รูปปก) แล้วไปหน้าแก้ไขพร้อมผลการอัป
@@ -210,13 +218,21 @@ export default function HotelEditorPage() {
           </Link>
         )}
         title={hotel ? hotel.name : tx('เพิ่มโรงแรม', 'Add hotel')}
-        description={hotel ? tx('แก้ข้อมูลที่ลูกค้าเห็น และจัดการประเภทห้อง', 'Edit what guests see and manage room types') : tx('กรอกข้อมูลโรงแรม แล้วเพิ่มประเภทห้องในขั้นถัดไป', 'Fill in the property, then add room types')}
-        actions={hotel && (
+        description={hotel
+          ? tx('แก้ข้อมูลที่ลูกค้าเห็น และจัดการประเภทห้อง', 'Edit what guests see and manage room types')
+          : isAdmin
+            ? tx('กรอกข้อมูลโรงแรม แล้วเพิ่มประเภทห้องในขั้นถัดไป — โรงแรมที่ผู้ดูแลระบบเพิ่มเผยแพร่ทันที', 'Fill in the property, then add room types — hotels added by admins are published right away')
+            : tx('กรอกข้อมูลโรงแรม แล้วเพิ่มประเภทห้องในขั้นถัดไป — ลูกค้าจะเห็นหลังผู้ดูแลระบบอนุมัติ', 'Fill in the property, then add room types — guests will see it after an admin approves it')}
+        actions={hotel?.approval.status === 'approved' && (
           <Link to={`/hotels/${hotel.id}`} target="_blank" rel="noreferrer" className={buttonSecondary}>
             <Icon name="external" className="h-4 w-4" />{tx('ดูหน้าเว็บ', 'View on site')}
           </Link>
         )}
       />
+
+      {hotel && (
+        <HotelApproval hotel={hotel} isAdmin={isAdmin} onChanged={reload} />
+      )}
 
       <form onSubmit={submit} className={`${card} grid gap-4 p-5 sm:grid-cols-2`}>
         <Field label={tx('ชื่อที่พัก', 'Property name')} required className="sm:col-span-2">

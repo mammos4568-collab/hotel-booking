@@ -113,6 +113,9 @@ try {
   ok(edited.status === 200 && edited.data.hotel.description === 'โรงแรมทดสอบ วิวภูเขา', 'owner แก้ข้อมูลโรงแรมตัวเองได้');
 
   console.log('\n=== 3) ลูกค้าจองโรงแรมใหม่ ===');
+  // โรงแรมที่ owner เพิ่มต้องให้ admin อนุมัติก่อน ลูกค้าถึงจะเห็น (รายละเอียดทดสอบใน test/hotel-approval.js)
+  const approved = await admin.call(`/admin/hotels/${hotelId}/approve`, 'POST');
+  ok(approved.data?.hotel?.approval?.status === 'approved', 'admin อนุมัติโรงแรมที่ owner เพิ่ม → เผยแพร่', JSON.stringify(approved.data));
   const checkIn = addDays(today, 30);
   const checkOut = addDays(today, 32);
   const detail = await call(`/hotels/${hotelId}?checkIn=${checkIn}&checkOut=${checkOut}&guests=2`);

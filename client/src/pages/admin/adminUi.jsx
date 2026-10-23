@@ -154,6 +154,34 @@ export function RoleBadge({ role }) {
   return <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${meta.className}`}>{tx(meta.th, meta.en)}</span>;
 }
 
+// สถานะการอนุมัติโรงแรม (properties.approval_status · db/08-hotel-approval.sql)
+export const APPROVAL_META = {
+  pending: { th: 'รออนุมัติ', en: 'Pending review', className: 'bg-amber-100 text-amber-800', icon: 'clock' },
+  approved: { th: 'เผยแพร่แล้ว', en: 'Published', className: 'bg-emerald-100 text-emerald-800', icon: 'check' },
+  rejected: { th: 'ไม่อนุมัติ/ระงับ', en: 'Not approved', className: 'bg-rose-100 text-rose-700', icon: 'x' },
+};
+
+export function ApprovalBadge({ status }) {
+  const { tx } = useLanguage();
+  const meta = APPROVAL_META[status] ?? APPROVAL_META.pending;
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${meta.className}`}>
+      <Icon name={meta.icon} className="h-3.5 w-3.5" />{tx(meta.th, meta.en)}
+    </span>
+  );
+}
+
+// คำก้ำกึ่งที่ตัวกรองเจอ (admin เท่านั้น) — ตัวกรองบล็อกคำหยาบชัดเจนไปแล้ว ที่เหลือให้คนตัดสิน
+export function SuspiciousWords({ words }) {
+  const { tx } = useLanguage();
+  if (!words?.length) return null;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">
+      <Icon name="alert" className="h-3.5 w-3.5" />{tx('คำที่ควรตรวจ', 'Words to check')}: {words.map((word) => `"${word}"`).join(', ')}
+    </span>
+  );
+}
+
 // ตัวเลือกโรงแรม (ตัวกรองในหน้าการจอง/รีวิว) — owner เห็นเฉพาะโรงแรมตัวเองอยู่แล้วจาก API
 export function HotelFilter({ value, onChange }) {
   const { tx } = useLanguage();

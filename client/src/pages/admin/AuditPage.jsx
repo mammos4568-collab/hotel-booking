@@ -21,8 +21,19 @@ function describe(log, tx, lang) {
   const fields = (d.fields ?? []).map((key) => (FIELD_LABELS[key] ? tx(...FIELD_LABELS[key]) : key)).join(', ');
   const role = (key) => (ROLE_META[key] ? tx(ROLE_META[key].th, ROLE_META[key].en) : key);
   switch (log.action) {
-    case 'hotel.create': return { title: tx(`เพิ่มโรงแรม #${log.entityId}`, `Created hotel #${log.entityId}`) };
-    case 'hotel.update': return { title: tx(`แก้ข้อมูลโรงแรม #${log.entityId}`, `Edited hotel #${log.entityId}`), detail: fields && tx(`ฟิลด์: ${fields}`, `Fields: ${fields}`) };
+    case 'hotel.create': return {
+      title: tx(`เพิ่มโรงแรม #${log.entityId}`, `Created hotel #${log.entityId}`),
+      detail: d.approval === 'pending' && tx('รออนุมัติ', 'Pending approval'),
+    };
+    case 'hotel.update': return {
+      title: tx(`แก้ข้อมูลโรงแรม #${log.entityId}`, `Edited hotel #${log.entityId}`),
+      detail: [fields && tx(`ฟิลด์: ${fields}`, `Fields: ${fields}`), d.resubmitted && tx('ส่งตรวจใหม่', 'Resubmitted for review')].filter(Boolean).join(' · '),
+    };
+    case 'hotel.approve': return { title: tx(`อนุมัติโรงแรม #${log.entityId}`, `Approved hotel #${log.entityId}`) };
+    case 'hotel.reject': return {
+      title: d.from === 'approved' ? tx(`ระงับโรงแรม #${log.entityId}`, `Suspended hotel #${log.entityId}`) : tx(`ไม่อนุมัติโรงแรม #${log.entityId}`, `Rejected hotel #${log.entityId}`),
+      detail: d.reason && tx(`เหตุผล: ${d.reason}`, `Reason: ${d.reason}`),
+    };
     case 'hotel.delete': return { title: tx(`ลบโรงแรม #${log.entityId}`, `Deleted hotel #${log.entityId}`), detail: d.name };
     case 'hotel.image_add': return { title: tx(`เพิ่มรูปโรงแรม #${log.entityId}`, `Added a photo to hotel #${log.entityId}`), detail: d.position && tx(`ลำดับที่ ${d.position} · ${Math.round(d.bytes / 1024)} KB`, `Position ${d.position} · ${Math.round(d.bytes / 1024)} KB`) };
     case 'hotel.image_reorder': return { title: tx(`เรียงรูปโรงแรม #${log.entityId} ใหม่`, `Reordered photos of hotel #${log.entityId}`) };

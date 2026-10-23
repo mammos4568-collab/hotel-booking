@@ -6,6 +6,7 @@
 import { Router } from 'express';
 import { pool } from '../../db.js';
 import { requireAuth } from '../../middleware/auth.js';
+import { publicHotelSql } from '../../lib/hotelApproval.js';
 import { hotelCoverSql } from '../../lib/hotelImages.js';
 import { serializeHotel } from '../../lib/hotelSearch.js';
 import { rateLimit } from '../../lib/rateLimit.js';
@@ -43,7 +44,7 @@ router.get('/', async (req, res, next) => {
          LEFT JOIN LATERAL (
            SELECT MIN(base_price_per_night)::float AS nightly_from FROM rooms WHERE property_id = p.property_id
          ) pr ON TRUE
-        WHERE f.user_id = $1
+        WHERE f.user_id = $1 AND ${publicHotelSql('p')} -- โรงแรมที่ถูกระงับไม่แสดง (กลับมาเองเมื่ออนุมัติอีกครั้ง)
         ORDER BY f.created_at DESC`,
       [req.user.id],
     );
@@ -77,7 +78,7 @@ router.put('/:hotelId', toggleLimiter, async (req, res, next) => {
     const { rowCount } = await pool.query(
       `INSERT INTO favorites (user_id, property_id)
        SELECT $1, p.property_id FROM properties p
-        WHERE p.property_id = $2
+        WHERE p.property_id = $2 AND ${publicHotelSql('p')}
           AND (SELECT COUNT(*) FROM favorites WHERE user_id = $1) < $3
        ON CONFLICT (user_id, property_id) DO NOTHING`,
       [req.user.id, hotelId, MAX_FAVORITES],
@@ -85,7 +86,7 @@ router.put('/:hotelId', toggleLimiter, async (req, res, next) => {
     if (!rowCount) {
       // ไม่ได้เพิ่ม → ดูว่าเพราะอะไร: มีอยู่แล้ว (ถือว่าสำเร็จ) / ไม่มีโรงแรมนี้ / เต็มเพดาน
       const { rows: [state] } = await pool.query(
-        `SELECT EXISTS (SELECT 1 FROM properties WHERE property_id = $2) AS hotel_exists,
+        `SELECT EXISTS (SELECT 1 FROM properties p WHERE p.property_id = $2 AND ${publicHotelSql('p')}) AS hotel_exists,
                 EXISTS (SELECT 1 FROM favorites WHERE user_id = $1 AND property_id = $2) AS already_saved`,
         [req.user.id, hotelId],
       );
