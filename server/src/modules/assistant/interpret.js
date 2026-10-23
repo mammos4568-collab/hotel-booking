@@ -452,7 +452,7 @@ const FAQ = [
   { key: 'privacy', strong: true, re: /ข้อมูลส่วน(?:ตัว|บุคคล)|ความเป็นส่วนตัว|ลบบัญชี|ลบข้อมูล|เก็บข้อมูล|(?<![a-z])(?:pdpa|privacy|personal data|delete (?:my )?(?:account|data))(?![a-z])/ },
   { key: 'cancel', strong: true, re: /ยกเลิก|คืนเงิน|(?<![a-z])(?:cancel\w*|refund\w*)(?![a-z])/ },
   { key: 'hold', strong: true, re: /15 ?นาที|จองค้าง|ค้างชำระ|หมดเวลา|ถือห้อง|กันห้อง|(?<![a-z])(?:hold|expire\w*|time limit)(?![a-z])/ },
-  { key: 'payment', strong: true, re: /วิธี(?:การ)?(?:จ่าย|ชำระ)|จ่าย(?:เงิน)?(?:ยัง|อย่าง|ได้|ผ่าน|ด้วย)|ชำระ|บัตรเครดิต|บัตรเดบิต|เครดิต|พร้อมเพย์|โอนเงิน|(?<![a-z])(?:promptpay|prompt pay|qr|payment|pay|paying|credit card|debit card)(?![a-z])/ },
+  { key: 'payment', strong: true, re: /วิธี(?:การ)?(?:จ่าย|ชำระ)|จ่าย(?:เงิน)?(?:ยัง|อย่าง|ได้|ผ่าน|ด้วย)|ชำระ|บัตรเครดิต|บัตรเดบิต|เครดิต|พร้อมเพย์|โอนเงิน|ทรูมันนี่?|ทรูมันนี|วอลเล็ท|วอลเลท|(?<![a-z])(?:promptpay|prompt pay|qr|payment|pay|paying|credit card|debit card|truemoney|true money|wallet)(?![a-z])/ },
   { key: 'my_bookings', strong: true, re: /การจองของ(?:ฉัน|ผม|เรา|หนู|ดิฉัน)|ดูการจอง|ประวัติการจอง|เช็[คก](?:การ)?จอง|ตรวจสอบการจอง|เลข(?:ที่)?การจอง|(?<![a-z])(?:my bookings?|booking history|check (?:my )?booking|booking (?:reference|number))(?![a-z])/ },
   { key: 'confirmation', strong: true, re: /อีเมลยืนยัน|ได้อีเมล|ส่งอีเมล|ยืนยันการจอง|(?<![a-z])(?:confirmation (?:e-?mail|mail|number)|confirm(?:ed)? (?:my )?booking|e-?mail confirmation)(?![a-z])/ },
   { key: 'how_to_book', strong: true, re: /จอง(?:ยัง|อย่าง)ไง|จองได้(?:ยัง|อย่าง)ไง|จองอย่างไร|วิธี(?:การ)?จอง|ขั้นตอน(?:การ)?จอง|(?<![a-z])(?:how (?:do i |to |can i |does )?(?:make a )?book\w*|booking process)(?![a-z])/ },

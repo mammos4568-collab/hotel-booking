@@ -581,8 +581,8 @@ function faqReply(key, lang) {
       'Booking takes 4 steps:\n1) Search a city and pick your dates\n2) Open a property and choose a room type\n3) Enter guest details (sign-in required)\n4) Pay within 15 minutes to confirm',
     ), [{ label: say('ค้นหาที่พัก', 'Search stays'), to: '/search' }]],
     payment: [say(
-      'ชำระได้ด้วยบัตรเครดิต/เดบิต หรือ QR พร้อมเพย์ (เป็นการชำระเงินจำลองของโปรเจกต์) ราคาคิดเป็นเงินบาท และระบบเก็บเฉพาะเลข 4 หลักท้ายของบัตร ไม่เก็บเลขบัตรเต็มหรือ CVC',
-      'You can pay by credit/debit card or PromptPay QR (payments are simulated in this project). Prices are charged in Thai baht, and only the last 4 card digits are stored — never the full number or CVC.',
+      'ชำระได้ด้วยบัตรเครดิต/เดบิต, QR พร้อมเพย์ หรือ TrueMoney Wallet (เป็นการชำระเงินจำลองของโปรเจกต์) ราคาคิดเป็นเงินบาท ระบบเก็บเฉพาะเลข 4 หลักท้ายของบัตร ไม่เก็บเลขบัตรเต็ม CVC หรือเบอร์วอลเล็ต',
+      'You can pay by credit/debit card, PromptPay QR or TrueMoney Wallet (payments are simulated in this project). Prices are charged in Thai baht; only the last 4 card digits are stored — never the full number, CVC or wallet phone number.',
     ), [myBookings]],
     hold: [say(
       'หลังกดจอง ระบบกันห้องไว้ให้ 15 นาที ถ้าไม่ชำระภายในเวลานี้การจองจะหมดอายุและห้องจะกลับไปให้คนอื่นจองได้ (มีการจองที่รอชำระพร้อมกันได้ไม่เกิน 3 รายการ)',

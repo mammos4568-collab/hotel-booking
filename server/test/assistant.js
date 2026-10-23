@@ -52,6 +52,8 @@ const CASES = [
   ['ยกเลิกการจองได้ไหม', {}, { intent: 'faq', faq: 'cancel' }],
   ['ที่พักภูเก็ตยกเลิกฟรีไหม', {}, { intent: 'faq', faq: 'cancel', city: 'Phuket' }],
   ['จ่ายเงินยังไง', {}, { intent: 'faq', faq: 'payment' }],
+  ['ใช้ทรูมันนี่ได้ไหม', {}, { intent: 'faq', faq: 'payment' }],
+  ['can I pay with truemoney wallet', {}, { intent: 'faq', faq: 'payment' }],
   ['จองยังไง', {}, { intent: 'faq', faq: 'how_to_book' }],
   ['ดูการจองของฉันได้ที่ไหน', {}, { intent: 'faq', faq: 'my_bookings' }],
   ['อยากลบบัญชี', {}, { intent: 'faq', faq: 'privacy' }],
