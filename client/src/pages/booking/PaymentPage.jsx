@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../../api.js';
 import Icon from '../../components/Icon.jsx';
 import BookingSteps from '../../components/BookingSteps.jsx';
@@ -37,6 +37,12 @@ function formatCardNumber(value) {
 function formatExpiry(value) {
   const digits = value.replace(/\D/g, '').slice(0, 4);
   return digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
+}
+
+// เบอร์มือถือ 10 หลัก → 081-234-5678 (ใช้กับ TrueMoney Wallet)
+function formatPhone(value) {
+  const digits = value.replace(/\D/g, '').slice(0, 10);
+  return [digits.slice(0, 3), digits.slice(3, 6), digits.slice(6)].filter(Boolean).join('-');
 }
 
 // นับถอยหลังเวลาถือห้อง (มาจาก holdExpiresAt ที่ server คำนวณ)
@@ -89,13 +95,57 @@ export default function PaymentPage() {
   const [loadError, setLoadError] = useState('');
   const [method, setMethod] = useState('card');
   const [card, setCard] = useState({ number: '', name: '', expiry: '', cvc: '' });
+  const [walletPhone, setWalletPhone] = useState('');
   const [touched, setTouched] = useState(false);
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState('');
+  // TrueMoney จ่ายผ่าน Opn Payments จริง ('opn') หรือแบบจำลอง ('simulated') — server เป็นคนบอก
+  const [payConfig, setPayConfig] = useState({ truemoney: 'simulated', testMode: true });
+  const [searchParams, setSearchParams] = useSearchParams();
+  const returnedFromGateway = searchParams.get('gateway_return') === '1';
+  const [verifying, setVerifying] = useState(returnedFromGateway);
+  const viaGateway = method === 'truemoney' && payConfig.truemoney === 'opn';
 
   useEffect(() => {
     api(`/bookings/${id}`).then((data) => setBooking(data.booking)).catch((err) => setLoadError(err.message));
+    api('/bookings/payment-config').then(setPayConfig).catch(() => {});
   }, [id]);
+
+  // กลับมาจากหน้ายืนยันของ TrueMoney (Opn พากลับมาพร้อม ?gateway_return=1)
+  // → ให้ server ไปถาม Opn ว่าจ่ายสำเร็จไหม (หน้าเว็บไม่ตัดสินเอง) · ยังรอผล = ถามซ้ำทุก 3 วินาที สูงสุด 10 ครั้ง
+  useEffect(() => {
+    if (!returnedFromGateway) return undefined;
+    let stopped = false;
+    let timer;
+    setVerifying(true);
+    const check = async (attempt) => {
+      try {
+        const result = await api(`/bookings/${id}/pay/verify`, { method: 'POST' });
+        if (stopped) return;
+        if (result.state === 'paid') {
+          navigate(`/booking/success/${id}`, { replace: true });
+          return;
+        }
+        if (attempt < 10) {
+          timer = setTimeout(() => check(attempt + 1), 3000);
+          return;
+        }
+        setPayError(tx('ยังไม่ได้รับผลจาก TrueMoney — ถ้ายืนยันในแอปแล้ว รอสักครู่แล้วกดตรวจสอบอีกครั้ง', "No result from TrueMoney yet — if you've approved in the app, wait a moment and check again."));
+      } catch (err) {
+        if (stopped) return;
+        setPayError(err.message);
+      }
+      setMethod('truemoney');
+      setVerifying(false);
+      setSearchParams({}, { replace: true });
+      api(`/bookings/${id}`).then((data) => setBooking(data.booking)).catch(() => {});
+    };
+    check(1);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [returnedFromGateway, id]);
 
   const secondsLeft = useCountdown(booking?.holdExpiresAt);
   const digits = card.number.replace(/\s/g, '');
@@ -106,18 +156,30 @@ export default function PaymentPage() {
     expiry: !/^\d{2}\/\d{2}$/.test(card.expiry) || Number(card.expiry.slice(0, 2)) < 1 || Number(card.expiry.slice(0, 2)) > 12 ? tx('รูปแบบ MM/YY', 'Use MM/YY') : '',
     cvc: !/^\d{3,4}$/.test(card.cvc) ? tx('CVC 3–4 หลัก', '3–4 digits') : '',
   };
+  const walletDigits = walletPhone.replace(/\D/g, '');
+  const walletError = /^0[689]\d{8}$/.test(walletDigits) ? '' : tx('เบอร์มือถือ 10 หลัก ขึ้นต้นด้วย 06, 08 หรือ 09', 'A 10-digit mobile number starting with 06, 08 or 09');
 
   const pay = async (event) => {
     event?.preventDefault();
     setTouched(true);
     setPayError('');
     if (method === 'card' && Object.values(cardErrors).some(Boolean)) return;
+    if (method === 'truemoney' && !viaGateway && walletError) return;
+    let leaving = false; // กำลังเปลี่ยนไปหน้า TrueMoney → ปุ่มค้างสถานะ "กำลังไป…" ไว้ ไม่ให้กดซ้ำ
     setPaying(true);
     try {
-      const body = method === 'card'
-        ? { method, cardNumber: digits, cardName: card.name, expiry: card.expiry, cvc: card.cvc }
-        : { method };
-      await api(`/bookings/${id}/pay`, { method: 'POST', body });
+      const bodies = {
+        card: { method, cardNumber: digits, cardName: card.name, expiry: card.expiry, cvc: card.cvc },
+        truemoney: viaGateway ? { method } : { method, walletPhone: walletDigits },
+        promptpay: { method },
+      };
+      const result = await api(`/bookings/${id}/pay`, { method: 'POST', body: bodies[method] });
+      if (result.redirectUrl) {
+        // Opn: ไปยืนยันในแอป TrueMoney (เปลี่ยนหน้าทั้งหน้า) — ยังไม่ถือว่าจ่ายจนกว่าจะกลับมาตรวจผล
+        leaving = true;
+        window.location.assign(result.redirectUrl);
+        return;
+      }
       navigate(`/booking/success/${id}`, { replace: true });
     } catch (err) {
       setPayError(err.message);
@@ -126,7 +188,7 @@ export default function PaymentPage() {
         api(`/bookings/${id}`).then((data) => setBooking(data.booking)).catch(() => {});
       }
     } finally {
-      setPaying(false);
+      if (!leaving) setPaying(false);
     }
   };
 
@@ -137,6 +199,7 @@ export default function PaymentPage() {
       </div>
     );
   }
+  if (verifying) return <PageLoader label={tx('กำลังตรวจสอบผลการชำระเงินกับ TrueMoney…', 'Checking your TrueMoney payment…')} />;
   if (!booking) return <PageLoader />;
   if (booking.status === 'confirmed' || booking.status === 'completed') return <Navigate to={`/booking/success/${id}`} replace />;
 
@@ -185,15 +248,17 @@ export default function PaymentPage() {
             <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500"><Icon name="lock" className="h-4 w-4" />{tx('ระบบชำระเงินจำลองสำหรับโปรเจกต์ — ไม่มีการตัดเงินจริง', 'Simulated payment for this project — no real charge')}</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-3">
             {[
               { key: 'card', icon: 'card', label: tx('บัตรเครดิต / เดบิต', 'Credit / debit card') },
               { key: 'promptpay', icon: 'qr', label: 'PromptPay QR' },
+              { key: 'truemoney', icon: 'wallet', label: 'TrueMoney Wallet' },
             ].map((option) => (
               <button
                 key={option.key}
                 type="button"
-                onClick={() => { setMethod(option.key); setPayError(''); }}
+                onClick={() => { setMethod(option.key); setPayError(''); setTouched(false); }}
+                aria-pressed={method === option.key}
                 className={`flex items-center gap-3 rounded-2xl border-2 p-4 text-left text-sm font-bold transition ${
                   method === option.key ? 'border-brand-600 bg-brand-50 text-brand-900' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
                 }`}
@@ -262,6 +327,78 @@ export default function PaymentPage() {
                 <Icon name="lock" className="h-5 w-5" />
                 {paying ? tx('กำลังชำระเงิน…', 'Processing…') : tx(`ชำระเงิน ${formatPrice(booking.totalAmount)}`, `Pay ${formatPrice(booking.totalAmount)}`)}
               </button>
+            </form>
+          ) : method === 'truemoney' ? (
+            // TrueMoney Wallet (จำลอง): กรอกเบอร์ที่ผูกกับวอลเล็ต → server ตรวจรูปแบบแล้วบันทึกว่าจ่ายแล้ว (ไม่มีการตัดเงินจริง)
+            <form onSubmit={pay} noValidate className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 sm:p-6">
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-orange-500 text-white">
+                  <Icon name="wallet" className="h-6 w-6" />
+                </span>
+                <div>
+                  <p className="font-bold text-slate-900">TrueMoney Wallet</p>
+                  <p className="text-xs text-slate-500">
+                    {payConfig.truemoney === 'opn'
+                      ? tx('ชำระผ่าน Opn Payments — ยืนยันการจ่ายในแอป TrueMoney', 'Paid via Opn Payments — approve the payment in the TrueMoney app')
+                      : tx('กรอกเบอร์มือถือที่ผูกกับวอลเล็ต แล้วยืนยันการชำระในแอป (จำลอง)', 'Enter the mobile number linked to your wallet, then approve in the app (simulated)')}
+                  </p>
+                </div>
+              </div>
+              {payConfig.truemoney === 'opn' ? (
+                <div className="space-y-2 text-sm">
+                  <p className="rounded-xl bg-orange-50 px-3 py-2 text-orange-900">
+                    {tx('กดปุ่มด้านล่าง ระบบจะพาไปยืนยันการชำระเงินกับ TrueMoney แล้วพากลับมาที่หน้านี้อัตโนมัติ', "Press the button below — you'll confirm the payment with TrueMoney, then come back here automatically.")}
+                  </p>
+                  {payConfig.testMode && (
+                    <p className="flex items-start gap-1.5 text-xs text-slate-500">
+                      <Icon name="info" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      {tx('โหมดทดสอบ: หน้ายืนยันของ Opn ให้เลือก Successful หรือ Failed ได้ — ไม่มีการตัดเงินจริง', 'Test mode: on the Opn confirmation page choose Successful or Failed — no real money is charged.')}
+                    </p>
+                  )}
+                </div>
+              ) : (
+              <>
+              <label className="block text-sm font-semibold text-slate-700">
+                {tx('เบอร์มือถือ', 'Mobile number')}
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  value={walletPhone}
+                  onChange={(e) => setWalletPhone(formatPhone(e.target.value))}
+                  placeholder="081-234-5678"
+                  className={`mt-1.5 w-full rounded-xl border bg-white px-3.5 py-2.5 font-mono text-sm tracking-wider outline-none transition focus:ring-4 ${
+                    touched && walletError ? 'border-rose-400 focus:ring-rose-100' : 'border-slate-300 focus:border-brand-500 focus:ring-brand-100'
+                  }`}
+                />
+                {touched && walletError && <span className="mt-1 block text-xs text-rose-600">{walletError}</span>}
+              </label>
+              <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                {tx('เบอร์ทดสอบ', 'Test numbers')}: <b className="font-mono text-slate-700">081-234-5678</b> {tx('(ผ่าน)', '(success)')} · <b className="font-mono text-slate-700">080-000-0000</b> {tx('(ยอดเงินไม่พอ)', '(insufficient balance)')}
+              </p>
+              <p className="flex items-center gap-1.5 text-xs text-slate-500">
+                <Icon name="shield" className="h-3.5 w-3.5 text-emerald-600" />
+                {tx('เราไม่เก็บเบอร์ที่กรอก ใช้ยืนยันการชำระครั้งนี้เท่านั้น', "We don't store this number — it's only used to confirm this payment.")}
+              </p>
+              </>
+              )}
+              {payError && <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{payError}</p>}
+              <button type="submit" disabled={paying} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-600 py-4 text-base font-bold text-white shadow-lg shadow-brand-600/25 transition hover:bg-brand-700 disabled:opacity-60">
+                <Icon name="wallet" className="h-5 w-5" />
+                {payConfig.truemoney === 'opn'
+                  ? (paying
+                    ? tx('กำลังพาไปหน้า TrueMoney…', 'Taking you to TrueMoney…')
+                    : tx(`ไปยืนยันกับ TrueMoney ${formatPrice(booking.totalAmount)}`, `Continue to TrueMoney · ${formatPrice(booking.totalAmount)}`))
+                  : (paying
+                    ? tx('กำลังรอยืนยันในแอป TrueMoney…', 'Waiting for approval in TrueMoney…')
+                    : tx(`ชำระด้วย TrueMoney ${formatPrice(booking.totalAmount)}`, `Pay ${formatPrice(booking.totalAmount)} with TrueMoney`))}
+              </button>
+              {payConfig.truemoney === 'opn' && payError && (
+                // ยืนยันในแอปแล้วแต่ผลยังไม่มา → กดให้ server ถาม Opn อีกครั้ง
+                <button type="button" onClick={() => { setPayError(''); setSearchParams({ gateway_return: '1' }, { replace: true }); }} className="w-full rounded-2xl border border-slate-300 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                  {tx('ตรวจสอบผลการชำระเงินอีกครั้ง', 'Check payment status again')}
+                </button>
+              )}
             </form>
           ) : (
             <div className="flex flex-col items-center gap-4 rounded-3xl border border-slate-200 bg-white p-6 text-center">

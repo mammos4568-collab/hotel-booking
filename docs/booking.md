@@ -9,7 +9,7 @@
 
 - [x] **1. `server/src/lib/availability.js`** — คำนวณห้องว่าง + ราคา (หน้าค้นหาใช้ด้วย)
 - [x] 2. `POST /api/bookings` สร้างการจอง (ถือห้องไว้ 15 นาทีระหว่างจ่ายเงิน)
-- [x] 3. `POST /api/bookings/:id/pay` ชำระเงิน (จำลอง: บัตร / PromptPay)
+- [x] 3. `POST /api/bookings/:id/pay` ชำระเงิน (จำลอง: บัตร / PromptPay / TrueMoney Wallet — ไม่เก็บเบอร์วอลเล็ต, เบอร์ทดสอบ 080-000-0000 = ยอดเงินไม่พอ)
 - [x] 4. `GET /api/bookings/me`, `GET /api/bookings/:id`, `GET /api/bookings/quote`
 - [x] 5. `POST /api/bookings/:id/cancel` (จ่ายแล้ว → คืนเงินจำลอง)
 - [x] 6. หน้าเว็บ: Checkout → ชำระเงิน → จองสำเร็จ → การจองของฉัน
@@ -142,7 +142,7 @@ WHERE r.room_id = $1;
 | หน้า | path | มีอะไร |
 |---|---|---|
 | Checkout | `/checkout?roomId=..&checkIn=..&checkOut=..&guests=..&rooms=..` | สรุปราคาจาก server (× จำนวนห้อง), ฟอร์มผู้เข้าพัก (เติมจากบัญชี), ยังไม่ล็อกอินให้ล็อกอินก่อนจอง |
-| ชำระเงิน | `/checkout/pay/:id` | นับถอยหลัง 15 นาที, บัตร (มีบัตรตัวอย่างแสดงสด) / PromptPay QR จำลอง |
+| ชำระเงิน | `/checkout/pay/:id` | นับถอยหลัง 15 นาที, บัตร (มีบัตรตัวอย่างแสดงสด) / PromptPay QR / TrueMoney Wallet (จำลองทั้งหมด) |
 | จองสำเร็จ | `/booking/success/:id` | เลขที่การจอง (คัดลอกได้), ผู้เข้าพัก, การชำระเงิน |
 | รายละเอียด | `/bookings/:id` | หน้าเดียวกับจองสำเร็จ + ปุ่มยกเลิก |
 | การจองของฉัน | `/my-bookings` | แท็บ กำลังจะถึง / ผ่านไปแล้ว / ยกเลิก + จ่ายต่อ, ยกเลิก, เขียนรีวิว, จองอีกครั้ง |
@@ -294,3 +294,38 @@ PASS  ยกเลิกแล้วห้องกลับมาว่าง�
   — ช่องไหนเว้นว่างจะปิดช่องทางนั้น กดแล้วหน้าเว็บบอกว่ายังไม่เปิด (เดิม production ไม่ได้ส่งค่าเหล่านี้เข้า container เลย)
 - ทดสอบแล้วบนเครื่อง: หน้าเว็บ/ลิงก์ลึก (`/hotels/7`), API, สมัครสมาชิก, ผู้ช่วย, header ความปลอดภัย,
   ไฟล์ `/assets` cache 1 ปี, เรียก API จากโดเมนอื่นได้ 403
+
+---
+
+## 12. ชำระเงินจริงผ่าน Opn Payments (โหมดทดสอบ) — เริ่มที่ TrueMoney
+
+ตั้ง `OMISE_SECRET_KEY` (key ทดสอบ `skey_test_…`) ใน `server/.env` = TrueMoney วิ่งผ่าน gateway จริง · ไม่ตั้ง = แบบจำลองเหมือนเดิม
+(บัตร / PromptPay ยังเป็นแบบจำลอง — ขั้นต่อไป) · ฐานข้อมูล: `db/06-payment-gateway.sql` (เพิ่ม `payments.gateway_charge_id`)
+
+ขั้นตอน:
+1. หน้าชำระเงินกด "ไปยืนยันกับ TrueMoney" → `POST /api/bookings/:id/pay` `{ method: 'truemoney' }`
+   server สร้างรายการที่ Opn (`POST /charges` · `source[type]=truemoney_jumpapp` · ยอดเป็นสตางค์) บันทึก `payments`
+   สถานะ `Pending` พร้อม `gateway_charge_id` แล้วตอบ `{ redirectUrl }`
+2. ลูกค้ายืนยันในแอป TrueMoney (โหมดทดสอบ: หน้าของ Opn ให้กด Successful / Failed) → Opn พากลับมาที่ `/checkout/pay/:id?gateway_return=1`
+3. หน้าเว็บเรียก `POST /api/bookings/:id/pay/verify` → server **ดึงรายการจาก Opn เอง** (ไม่เชื่อ URL ที่พากลับมา) แล้วตัดสิน
+   - สำเร็จ + การจองยังรอชำระ → `Paid`
+   - สำเร็จ แต่หมดเวลาถือห้อง/ถูกยกเลิกไปแล้ว → **คืนเงินทันที** (ห้องอาจถูกคนอื่นจองไปแล้ว)
+   - ไม่สำเร็จ → นับเป็นการจ่ายพลาด (ครบ 5 ครั้งยกเลิกการจอง) · ยังรอผล → หน้าเว็บถามซ้ำทุก 3 วินาที
+4. webhook `POST /api/bookings/gateway/webhook` (ตั้งใน dashboard ของ Opn ตอน deploy) — ลูกค้าจ่ายแล้วปิดแอปไม่กลับมา ระบบก็ยังได้ผล
+   ใช้แค่รหัสรายการจาก webhook แล้วถาม Opn เอง → ปลอม webhook มาก็ทำอะไรไม่ได้
+
+จุดที่ต้องอธิบายได้ตอนพรีเซนต์:
+- **ล็อกแถวการจอง (FOR UPDATE) ทุกทางที่อัปเดตผล** — หน้าเว็บกับ webhook อาจมาพร้อมกัน คนที่สองเห็นว่าไม่ใช่ `Pending` แล้ว
+  จึงไม่บันทึก/ไม่คืนเงินซ้ำ (ฟังก์ชันเดียว `applyGatewayCharge()` ใช้ร่วมกันทุกทาง)
+- **กดจ่ายซ้ำไม่สร้างรายการซ้ำ** — มีรายการ `Pending` อยู่ ใช้ลิงก์เดิม (กันโดนตัดเงินสองครั้ง)
+- **ยกเลิกการจองที่จ่ายผ่าน Opn → สั่งคืนเงินที่ Opn ก่อนแก้ฐานข้อมูล** ถ้าคืนไม่สำเร็จ ROLLBACK ทั้งหมด
+  (`cancelBooking()` ลูกค้าและหลังบ้านใช้ร่วมกัน) และถาม Opn ก่อนว่าคืนไปแล้วหรือยัง กันคืนซ้ำ
+- secret key อยู่ที่ server เท่านั้น · ส่งให้ Opn แค่ยอดเงิน + เลขที่การจอง ไม่มีข้อมูลส่วนตัว
+- ยอดต่อครั้ง ฿20–฿50,000 (ข้อจำกัดของ TrueMoney ที่ Opn) ตรวจก่อนส่ง
+
+ไฟล์: `server/src/lib/opn.js` (เรียก API ด้วย fetch ไม่ลง SDK) · `modules/booking/routes.js` (`startTrueMoneyCharge`,
+`applyGatewayCharge`, `/pay/verify`, `/gateway/webhook`) · `lib/bookings.js` (`cancelBooking` คืนเงินผ่าน Opn) · `PaymentPage.jsx`
+
+- [x] TrueMoney ผ่าน Opn (โหมดทดสอบ)
+- [ ] บัตรผ่าน Omise.js (เลขบัตรวิ่งตรงไป Opn ไม่ผ่าน server เรา)
+- [ ] PromptPay QR จริง

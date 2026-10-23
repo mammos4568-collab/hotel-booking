@@ -9,7 +9,7 @@ import Icon from '../../components/Icon.jsx';
 import { PageLoader } from '../../components/Loading.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { formatDate, formatDateTime } from '../../lib/format.js';
-import { STATUS_META, paymentLabel } from '../booking/bookingStatus.js';
+import { STATUS_META, paymentLabel, paymentMethodLabel } from '../booking/bookingStatus.js';
 import {
   Field, HotelFilter, Modal, Notice, PageHeader, Pagination, baht, buttonDanger, buttonSecondary, card, inputClass, useAdminData,
 } from './adminUi.jsx';
@@ -100,7 +100,7 @@ function BookingDetail({ bookingId, onClose, onChanged }) {
                 {booking.payments.map((payment) => (
                   <li key={payment.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
                     <span className="text-slate-700">
-                      {payment.method === 'card' ? `${tx('บัตร', 'Card')}${payment.cardLast4 ? ` •••• ${payment.cardLast4}` : ''}` : payment.method === 'promptpay' ? 'PromptPay' : tx('ไม่ทราบวิธี', 'Unknown method')}
+                      {paymentMethodLabel(payment.method, payment.cardLast4, tx)}
                       <span className="ml-2 text-xs text-slate-400">{formatDateTime(payment.paidAt, lang)}</span>
                     </span>
                     <span className="flex items-center gap-2">

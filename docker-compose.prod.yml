@@ -52,6 +52,10 @@ services:
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       GITHUB_CALLBACK_URL: ${PUBLIC_URL:-http://localhost:8080}/api/auth/github/callback
+      # Opn Payments (TrueMoney) — เว้นว่าง = ชำระเงินแบบจำลอง · ตั้ง webhook ใน dashboard ของ Opn เป็น
+      # <PUBLIC_URL>/api/bookings/gateway/webhook (สำคัญตอนลูกค้าจ่ายแล้วไม่ได้กลับมาหน้าเว็บ)
+      OMISE_SECRET_KEY: ${OMISE_SECRET_KEY:-}
+      OMISE_PUBLIC_KEY: ${OMISE_PUBLIC_KEY:-}
     ports:
       - "${APP_PORT:-8080}:3000"
 

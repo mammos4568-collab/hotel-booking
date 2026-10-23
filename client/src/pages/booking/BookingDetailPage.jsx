@@ -9,7 +9,7 @@ import EmptyState from '../../components/EmptyState.jsx';
 import { PageLoader } from '../../components/Loading.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { formatDate, formatDateTime } from '../../lib/format.js';
-import { STATUS_META, paymentLabel } from './bookingStatus.js';
+import { STATUS_META, paymentLabel, paymentMethodLabel } from './bookingStatus.js';
 
 // ใช้ 2 แบบ: /booking/success/:id (หลังจ่ายเงินเสร็จ) และ /bookings/:id (ดูรายละเอียดจากหน้าการจองของฉัน)
 export default function BookingDetailPage({ justBooked = false }) {
@@ -129,7 +129,7 @@ export default function BookingDetailPage({ justBooked = false }) {
                   <>
                     <div className="flex justify-between gap-3">
                       <dt className="text-slate-500">{tx('วิธีชำระ', 'Method')}</dt>
-                      <dd className="font-semibold text-slate-900">{booking.payment.method === 'card' ? `${tx('บัตร', 'Card')} •••• ${booking.payment.cardLast4}` : 'PromptPay'}</dd>
+                      <dd className="font-semibold text-slate-900">{paymentMethodLabel(booking.payment.method, booking.payment.cardLast4, tx)}</dd>
                     </div>
                     <div className="flex justify-between gap-3"><dt className="text-slate-500">{tx('ชำระเมื่อ', 'Paid at')}</dt><dd className="font-semibold text-slate-900">{formatDateTime(booking.payment.paidAt, lang)}</dd></div>
                   </>

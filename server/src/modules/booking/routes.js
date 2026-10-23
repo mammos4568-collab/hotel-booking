@@ -7,6 +7,7 @@ import { BOOKING_SELECT, cancelBooking, deriveStatus, findBooking, serializeBook
 import { todayInBangkok, validateStay } from '../../lib/dates.js';
 import { rateLimit } from '../../lib/rateLimit.js';
 import { containsProfanity } from '../../lib/moderation.js';
+import { chargeOutcome, createTrueMoneyCharge, opnEnabled, opnTestMode, refundCharge, retrieveCharge } from '../../lib/opn.js';
 
 const router = Router();
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -234,6 +235,14 @@ router.post('/', requireAuth, createLimiter, async (req, res, next) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/bookings/payment-config — หน้าชำระเงินใช้เลือกว่าจะแสดง TrueMoney แบบไหน
+//   'opn' = เชื่อม Opn Payments จริง (พาไปยืนยันในแอป) · 'simulated' = แบบจำลอง (กรอกเบอร์ทดสอบ)
+// ---------------------------------------------------------------------------
+router.get('/payment-config', (req, res) => {
+  res.json({ truemoney: opnEnabled() ? 'opn' : 'simulated', testMode: !opnEnabled() || opnTestMode() });
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/bookings/:id — รายละเอียดการจอง (ของตัวเองเท่านั้น)
 // ---------------------------------------------------------------------------
 router.get('/:id', requireAuth, async (req, res, next) => {
@@ -248,12 +257,19 @@ router.get('/:id', requireAuth, async (req, res, next) => {
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/bookings/:id/pay — ชำระเงิน (จำลอง)
-// body: { method: 'card', cardNumber, cardName, expiry: 'MM/YY', cvc } หรือ { method: 'promptpay' }
+// POST /api/bookings/:id/pay — ชำระเงิน
+// body: { method: 'card', cardNumber, cardName, expiry: 'MM/YY', cvc } · { method: 'promptpay' }  (จำลอง)
+//       · { method: 'truemoney', walletPhone }
+//         - ตั้ง OMISE_SECRET_KEY แล้ว → จ่ายผ่าน Opn Payments จริง: ตอบ { redirectUrl } ให้ไปยืนยันในแอป TrueMoney
+//           แล้วหน้าเว็บเรียก /pay/verify ตอนกลับมา (walletPhone ไม่ใช้ — ลูกค้ายืนยันในแอปเอง)
+//         - ไม่ได้ตั้ง → แบบจำลอง: ตรวจรูปแบบเบอร์ แล้วถือว่าจ่ายแล้ว
 // ---------------------------------------------------------------------------
 
 // เลขบัตรทดสอบที่ระบบจะ "ปฏิเสธ" (ไว้โชว์กรณีจ่ายไม่ผ่าน) — บัตรอื่นที่ถูกต้องตาม Luhn ผ่านหมด
 const DECLINED_TEST_CARD = '4000000000000002';
+// เบอร์ทดสอบของ TrueMoney Wallet ที่จำลองว่า "ยอดเงินในวอลเล็ทไม่พอ" — เบอร์มือถืออื่นที่ถูกรูปแบบผ่านหมด
+const DECLINED_TEST_WALLET = '0800000000';
+const PAYMENT_METHODS = ['card', 'promptpay', 'truemoney'];
 
 function passesLuhn(digits) {
   let sum = 0;
@@ -271,6 +287,14 @@ function passesLuhn(digits) {
 function validatePayment(body) {
   const method = body?.method;
   if (method === 'promptpay') return { method, cardLast4: null };
+  if (method === 'truemoney') {
+    // จำลองการจ่ายด้วย TrueMoney Wallet: ตรวจแค่รูปแบบเบอร์มือถือไทยที่ผูกกับวอลเล็ต (ไม่มีการตัดเงินจริง)
+    // ไม่เก็บเบอร์ลงฐานข้อมูล — ใช้ยืนยันการจ่ายครั้งนี้เท่านั้น (PDPA: เก็บเท่าที่จำเป็น)
+    const phone = String(body.walletPhone ?? '').replace(/[\s-]/g, '');
+    if (!/^0[689]\d{8}$/.test(phone)) throw httpError(400, 'เบอร์ TrueMoney Wallet ไม่ถูกต้อง (มือถือ 10 หลัก ขึ้นต้นด้วย 06, 08 หรือ 09)');
+    if (phone === DECLINED_TEST_WALLET) throw httpError(402, 'ยอดเงินใน TrueMoney Wallet ไม่พอ กรุณาเติมเงินหรือเลือกวิธีชำระอื่น');
+    return { method, cardLast4: null };
+  }
   if (method !== 'card') throw httpError(400, 'วิธีชำระเงินไม่ถูกต้อง');
 
   const digits = String(body.cardNumber ?? '').replace(/[\s-]/g, '');
@@ -291,8 +315,125 @@ function validatePayment(body) {
 }
 
 // บันทึกการจ่ายที่ไม่สำเร็จ (ไว้นับจำนวนครั้ง) แล้วคืนจำนวนครั้งที่ผิดทั้งหมดของการจองนี้
+// error จาก Opn (ต่อไม่ติด / key ผิด / ปฏิเสธรายการ) → บอกผู้ใช้เป็นภาษาไทย (error 5xx ทั่วไปจะได้แค่ข้อความกลางๆ)
+// log เฉพาะรหัส error ของ Opn ไม่มีข้อมูลลูกค้า
+function passError(error, res, next) {
+  if (!error.opnCode) return next(error);
+  console.warn(`[${new Date().toISOString()}] Opn Payments error: ${error.opnCode}`);
+  return res.status(502).json({ message: 'เชื่อมต่อระบบชำระเงิน (Opn Payments) ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' });
+}
+
+const frontendUrl = (path) => new URL(path, process.env.CLIENT_URL || 'http://localhost:5173').toString();
+
+// ยอดที่ TrueMoney (Opn) รับได้ต่อครั้ง — ต่ำ/สูงกว่านี้ Opn ปฏิเสธ จึงตรวจก่อนจะได้บอกผู้ใช้ชัดๆ
+const TRUEMONEY_MIN_BAHT = 20;
+const TRUEMONEY_MAX_BAHT = 50_000;
+
+// ---------------------------------------------------------------------------
+// ผลจาก Opn → อัปเดตการจองของเรา (ใช้ทั้งตอนสร้างรายการซ้ำ, หน้ากลับจาก TrueMoney และ webhook)
+// ต้องเรียกใน transaction ที่ 🔒 ล็อกแถวการจองแล้ว (FOR UPDATE) — หน้าเว็บกับ webhook อาจมาพร้อมกัน
+// ล็อกแล้วจะทำทีละคน คนที่สองเห็นว่า payment ไม่ใช่ 'Pending' แล้วจึงไม่บันทึก/คืนเงินซ้ำ
+// คืน { state: 'paid' | 'pending' | 'failed' | 'refunded', message?, failed? }
+// ---------------------------------------------------------------------------
+async function countFailedPayments(client, bookingId) {
+  const { rows: [{ failed }] } = await client.query(
+    `SELECT COUNT(*)::int AS failed FROM payments WHERE booking_id = $1 AND status = 'Failed'`,
+    [bookingId]
+  );
+  return failed;
+}
+
+async function applyGatewayCharge(client, row, payment, charge) {
+  // จัดการไปแล้ว (เช่น webhook มาถึงก่อนหน้าเว็บ) → ตอบผลเดิม ไม่ทำซ้ำ
+  if (payment.status === 'Success') return { state: 'paid' };
+  if (payment.status === 'Refunded') return { state: 'refunded', message: 'รายการนี้คืนเงินแล้ว' };
+  if (payment.status === 'Failed') {
+    return { state: 'failed', message: 'ชำระเงินด้วย TrueMoney ไม่สำเร็จ', failed: await countFailedPayments(client, row.booking_id) };
+  }
+
+  const outcome = chargeOutcome(charge);
+  if (outcome.state === 'pending') return outcome;
+
+  if (outcome.state === 'failed') {
+    await client.query(`UPDATE payments SET status = 'Failed' WHERE payment_id = $1`, [payment.payment_id]);
+    const failed = await countFailedPayments(client, row.booking_id);
+    if (failed >= MAX_FAILED_PAYMENTS) {
+      await client.query(
+        `UPDATE bookings SET booking_status = 'Cancelled', payment_status = 'Failed', updated_at = now()
+          WHERE booking_id = $1 AND LOWER(booking_status) <> 'cancelled'`,
+        [row.booking_id]
+      );
+    }
+    return { ...outcome, failed };
+  }
+
+  // Opn บอกว่าจ่ายสำเร็จ — แต่การจองต้องยัง "รอชำระ" อยู่ ถ้าหมดเวลาถือห้อง/ถูกยกเลิก/จ่ายด้วยวิธีอื่นไปแล้ว
+  // ห้องอาจถูกคนอื่นจองไปแล้ว → คืนเงินรายการนี้ทันที แทนที่จะรับเงินแต่ไม่มีห้องให้
+  const status = deriveStatus(row, todayInBangkok());
+  if (status !== 'awaiting_payment') {
+    // คืนเงินไปแล้วรอบก่อน (เช่น COMMIT ไม่ผ่านหลังสั่งคืน) → ไม่สั่งคืนซ้ำ
+    if ((charge.refunded_amount ?? 0) < charge.amount) await refundCharge(charge.id, payment.amount);
+    await client.query(`UPDATE payments SET status = 'Refunded' WHERE payment_id = $1`, [payment.payment_id]);
+    if (status === 'expired') {
+      await client.query(
+        `UPDATE bookings SET booking_status = 'Cancelled', payment_status = 'Expired', updated_at = now() WHERE booking_id = $1`,
+        [row.booking_id]
+      );
+    }
+    return {
+      state: 'refunded',
+      message: status === 'expired'
+        ? `หมดเวลาถือห้อง (${HOLD_MINUTES} นาที) ก่อนชำระเงินสำเร็จ ระบบคืนเงินให้แล้ว กรุณาจองใหม่`
+        : 'การจองนี้ไม่ได้รอชำระเงินแล้ว ระบบคืนเงินรายการ TrueMoney นี้ให้แล้ว',
+    };
+  }
+
+  await client.query(`UPDATE payments SET status = 'Success', paid_at = now() WHERE payment_id = $1`, [payment.payment_id]);
+  await client.query(`UPDATE bookings SET payment_status = 'Paid', updated_at = now() WHERE booking_id = $1`, [row.booking_id]);
+  return { state: 'paid' };
+}
+
+// เริ่มจ่ายด้วย TrueMoney ผ่าน Opn → { redirectUrl } ให้หน้าเว็บพาไปยืนยันในแอป
+// ถ้ามีรายการเดิมที่ยังรอยืนยันอยู่ ใช้ลิงก์เดิม (กันกดหลายครั้งแล้วเกิดหลายรายการ = อาจโดนตัดเงินซ้ำ)
+async function startTrueMoneyCharge(client, row) {
+  if (row.total_amount < TRUEMONEY_MIN_BAHT || row.total_amount > TRUEMONEY_MAX_BAHT) {
+    throw httpError(400, `TrueMoney รับยอดต่อครั้ง ฿${TRUEMONEY_MIN_BAHT}–฿${TRUEMONEY_MAX_BAHT.toLocaleString()} กรุณาเลือกวิธีชำระอื่น`);
+  }
+  const { rows: [pending] } = await client.query(
+    `SELECT payment_id, gateway_charge_id, amount, status FROM payments
+      WHERE booking_id = $1 AND status = 'Pending' AND gateway_charge_id IS NOT NULL
+      ORDER BY payment_id DESC LIMIT 1 FOR UPDATE`,
+    [row.booking_id]
+  );
+  if (pending) {
+    const charge = await retrieveCharge(pending.gateway_charge_id);
+    const result = await applyGatewayCharge(client, row, pending, charge);
+    if (result.state === 'pending' && charge.authorize_uri) return { redirectUrl: charge.authorize_uri };
+    if (result.state === 'paid') return { paid: true };
+    // ไม่ throw ตรงนี้ — ผลของรายการเดิม (คืนเงิน/นับครั้งที่พลาด) ต้องถูก COMMIT ก่อน แล้วค่อยตอบ error
+    if (result.state === 'refunded') return { error: { status: 409, message: result.message } };
+    if (result.failed >= MAX_FAILED_PAYMENTS) {
+      return { error: { status: 429, message: `ชำระเงินไม่สำเร็จครบ ${MAX_FAILED_PAYMENTS} ครั้ง ระบบยกเลิกการจองนี้เพื่อความปลอดภัย กรุณาทำการจองใหม่` } };
+    }
+    // รายการเดิมไม่สำเร็จ/หมดอายุ → สร้างรายการใหม่ด้านล่าง
+  }
+
+  const charge = await createTrueMoneyCharge({
+    amount: row.total_amount,
+    bookingId: row.booking_id,
+    reference: row.booking_reference,
+    returnUri: frontendUrl(`/checkout/pay/${row.booking_id}?gateway_return=1`),
+  });
+  await client.query(
+    `INSERT INTO payments (booking_id, amount, method, status, gateway_charge_id)
+     VALUES ($1, $2, 'truemoney', 'Pending', $3)`,
+    [row.booking_id, row.total_amount, charge.id]
+  );
+  return { redirectUrl: charge.authorize_uri };
+}
+
 async function recordFailedPayment(client, row, body) {
-  const method = ['card', 'promptpay'].includes(body?.method) ? body.method : 'unknown';
+  const method = PAYMENT_METHODS.includes(body?.method) ? body.method : 'unknown';
   const digits = String(body?.cardNumber ?? '').replace(/\D/g, '');
   await client.query(
     `INSERT INTO payments (booking_id, amount, method, card_last4, status)
@@ -332,6 +473,15 @@ router.post('/:id/pay', requireAuth, payLimiter, async (req, res, next) => {
       throw httpError(409, status === 'cancelled' ? 'การจองนี้ถูกยกเลิกแล้ว' : 'การจองนี้ชำระเงินแล้ว');
     }
 
+    // TrueMoney + เชื่อม Opn Payments อยู่ → สร้างรายการที่ gateway แล้วส่งลูกค้าไปยืนยันในแอป
+    // (ยังไม่ถือว่าจ่าย — สถานะจ่ายแล้วมาจากการถาม Opn ตอนกลับมา หรือจาก webhook เท่านั้น)
+    if (req.body?.method === 'truemoney' && opnEnabled()) {
+      const result = await startTrueMoneyCharge(client, row);
+      await client.query('COMMIT'); // บันทึกผลของรายการเดิม (ถ้ามี) ก่อนตอบ แม้จะตอบเป็น error
+      if (result.error) return next(httpError(result.error.status, result.error.message));
+      return res.json(result);
+    }
+
     // ตรวจบัตร/วิธีจ่าย — ไม่ผ่านก็ "นับครั้ง" ไว้ในตาราง payments (status = 'Failed')
     // ผิดครบ MAX_FAILED_PAYMENTS ครั้ง → ยกเลิกการจองทันที ปล่อยห้องคืน และต้องจองใหม่
     let payment;
@@ -365,7 +515,91 @@ router.post('/:id/pay', requireAuth, payLimiter, async (req, res, next) => {
     res.json({ booking: serializeBooking(await findBooking(pool, bookingId)) });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
-    next(error);
+    passError(error, res, next);
+  } finally {
+    client.release();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/bookings/:id/pay/verify — กลับมาจากหน้ายืนยันของ TrueMoney → ถาม Opn ว่าจ่ายสำเร็จจริงไหม
+//   ไม่เชื่อ query string ที่ติดมากับ URL (ใครก็พิมพ์เองได้) — ดึงรายการจาก Opn ด้วย secret key ของเราเท่านั้น
+//   ตอบ { state: 'paid' | 'pending', booking } · ไม่สำเร็จ 402 · ครบ 5 ครั้ง 429 · คืนเงินแล้ว 409
+// ---------------------------------------------------------------------------
+router.post('/:id/pay/verify', requireAuth, payLimiter, async (req, res, next) => {
+  const bookingId = toPositiveInt(req.params.id);
+  if (!bookingId) return next(httpError(400, 'เลขการจองไม่ถูกต้อง'));
+  if (!opnEnabled()) return next(httpError(400, 'ระบบนี้ยังไม่ได้เชื่อมต่อ Opn Payments'));
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // 🔒 ล็อกการจองก่อน แล้วค่อยล็อกแถว payment — ลำดับเดียวกับหน้าจ่ายเงินและ webhook (กัน deadlock)
+    await client.query('SELECT booking_id FROM bookings WHERE booking_id = $1 FOR UPDATE', [bookingId]);
+    const row = await findOwnBooking(client, bookingId, req.user.id);
+    const { rows: [payment] } = await client.query(
+      `SELECT payment_id, gateway_charge_id, amount, status FROM payments
+        WHERE booking_id = $1 AND gateway_charge_id IS NOT NULL
+        ORDER BY payment_id DESC LIMIT 1 FOR UPDATE`,
+      [bookingId]
+    );
+    if (!payment) throw httpError(404, 'ไม่พบรายการชำระเงินผ่าน TrueMoney ของการจองนี้');
+
+    const charge = payment.status === 'Pending' ? await retrieveCharge(payment.gateway_charge_id) : null;
+    const result = await applyGatewayCharge(client, row, payment, charge);
+    await client.query('COMMIT'); // บันทึกผลก่อนตอบ ไม่ว่าจะสำเร็จหรือไม่
+
+    if (result.state === 'refunded') return next(httpError(409, result.message));
+    if (result.state === 'failed') {
+      if (result.failed >= MAX_FAILED_PAYMENTS) {
+        return next(httpError(429, `ชำระเงินไม่สำเร็จครบ ${MAX_FAILED_PAYMENTS} ครั้ง ระบบยกเลิกการจองนี้เพื่อความปลอดภัย กรุณาทำการจองใหม่`));
+      }
+      return next(httpError(402, `${result.message} (ลองได้อีก ${MAX_FAILED_PAYMENTS - result.failed} ครั้ง)`));
+    }
+    res.json({ state: result.state, booking: serializeBooking(await findBooking(pool, bookingId)) });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    passError(error, res, next);
+  } finally {
+    client.release();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/bookings/gateway/webhook — Opn แจ้งว่ารายการจ่ายเงินเสร็จแล้ว (charge.complete)
+//   สำคัญตอนลูกค้าจ่ายแล้วปิดแอป/เบราว์เซอร์ไปเลย ไม่ได้กลับมาหน้าเว็บ — ไม่มี webhook = เงินถูกตัดแต่การจองไม่อัปเดต
+//   ไม่ต้องล็อกอิน (Opn เป็นคนเรียก) จึงใช้แค่ "รหัสรายการ" จากข้อมูลที่ส่งมา แล้วดึงสถานะจริงจาก Opn เอง
+//   → ปลอม webhook มาก็ทำอะไรไม่ได้ นอกจากทำให้ระบบไปถาม Opn ซ้ำ (มี rate limit ต่อ IP)
+//   ตั้ง URL นี้ใน dashboard ของ Opn ตอน deploy จริง (localhost รับ webhook จากอินเทอร์เน็ตไม่ได้)
+// ---------------------------------------------------------------------------
+const webhookLimiter = rateLimit({ windowMs: 60_000, max: 120, key: (req) => `ip:${req.ip}` });
+
+router.post('/gateway/webhook', webhookLimiter, async (req, res, next) => {
+  const data = req.body?.data;
+  const chargeId = data?.object === 'charge' ? String(data.id ?? '') : '';
+  if (!opnEnabled() || !/^chrg_(test_)?[0-9a-z]+$/.test(chargeId)) return res.json({ ok: true, ignored: true });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [found] } = await client.query('SELECT booking_id FROM payments WHERE gateway_charge_id = $1', [chargeId]);
+    if (!found) {
+      await client.query('ROLLBACK');
+      return res.json({ ok: true, ignored: true });
+    }
+    await client.query('SELECT booking_id FROM bookings WHERE booking_id = $1 FOR UPDATE', [found.booking_id]);
+    const row = await findBooking(client, found.booking_id);
+    const { rows: [payment] } = await client.query(
+      'SELECT payment_id, gateway_charge_id, amount, status FROM payments WHERE gateway_charge_id = $1 FOR UPDATE',
+      [chargeId]
+    );
+    const charge = payment.status === 'Pending' ? await retrieveCharge(chargeId) : null;
+    const result = await applyGatewayCharge(client, row, payment, charge);
+    await client.query('COMMIT');
+    res.json({ ok: true, state: result.state });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(error); // ตอบ 5xx → Opn จะส่ง webhook มาใหม่ภายหลัง
   } finally {
     client.release();
   }
@@ -395,7 +629,7 @@ router.post('/:id/cancel', requireAuth, cancelLimiter, async (req, res, next) =>
     res.json({ booking: serializeBooking(await findBooking(pool, bookingId)) });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
-    next(error);
+    passError(error, res, next);
   } finally {
     client.release();
   }

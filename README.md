@@ -29,12 +29,13 @@ npm run dev
 
 - เช็ก API: http://localhost:3000/api/health
 - SQL ใน `db/` จะทำงานอัตโนมัติเมื่อสร้าง PostgreSQL volume ใหม่เท่านั้น หากมีฐานข้อมูลเดิมต้องสำรองข้อมูลก่อน แล้วจึงใช้ขั้นตอน migration/recreate ที่ทีมตกลงกัน
-- `db/03-booking.sql` (ส่วนเพิ่มของระบบจอง), `db/04-demo-data.sql` (ข้อมูลตัวอย่าง) และ `db/05-admin.sql` (หลังบ้าน)
-  รันซ้ำได้โดยไม่ลบข้อมูลเดิม ถ้ามีฐานข้อมูลอยู่แล้วให้สั่งเพิ่มแค่สามไฟล์นี้ (ตามลำดับ):
+- `db/03-booking.sql` (ส่วนเพิ่มของระบบจอง), `db/04-demo-data.sql` (ข้อมูลตัวอย่าง), `db/05-admin.sql` (หลังบ้าน) และ `db/06-payment-gateway.sql` (ชำระเงินผ่าน Opn)
+  รันซ้ำได้โดยไม่ลบข้อมูลเดิม ถ้ามีฐานข้อมูลอยู่แล้วให้สั่งเพิ่มแค่ไฟล์เหล่านี้ (ตามลำดับ):
   ```bash
   docker compose exec -T postgres psql -U agoda_admin -d agoda_db -f /docker-entrypoint-initdb.d/03-booking.sql
   docker compose exec -T postgres psql -U agoda_admin -d agoda_db -f /docker-entrypoint-initdb.d/04-demo-data.sql
   docker compose exec -T postgres psql -U agoda_admin -d agoda_db -f /docker-entrypoint-initdb.d/05-admin.sql
+  docker compose exec -T postgres psql -U agoda_admin -d agoda_db -f /docker-entrypoint-initdb.d/06-payment-gateway.sql
   ```
 - ถ้าเครื่องมี PostgreSQL ตัวอื่นใช้พอร์ต 5432 อยู่แล้ว ให้สร้าง `docker-compose.override.yml` (ไม่ต้อง commit) เปลี่ยนพอร์ต เช่น
   `ports: !override ["5434:5432"]` ใต้ `services.postgres` แล้วแก้ `DATABASE_URL` ใน `server/.env` เป็นพอร์ตเดียวกัน
@@ -44,6 +45,7 @@ npm run dev
   node server/test/multi-room.js           # จองหลายห้อง + จองพร้อมกันแบบหลายห้อง
   node server/test/protection.js           # rate limit, จำกัดการจองค้างชำระ, จ่ายผิดซ้ำ, คำหยาบ
   node server/test/favorites.js            # รายการโปรด
+  node server/test/payment-methods.js      # วิธีชำระเงิน: บัตร / PromptPay / TrueMoney Wallet (จำลอง)
   node server/test/assistant.js            # ผู้ช่วยแนะนำที่พัก (ส่วนตีความรันได้โดยไม่เปิด server)
   node server/test/admin.js                # หลังบ้าน: สิทธิ์, ห้อง/ปฏิทินราคา, ยกเลิก+คืนเงิน, admin คนสุดท้าย
   ```
@@ -76,6 +78,18 @@ node --env-file=server/.env server/scripts/set-role.js owner@example.com owner -
 - ช่อง `*_CALLBACK_URL` ใน `server/.env` ตั้งไว้แล้ว ต้องตรงกับที่ลงทะเบียนทุกตัวอักษร
 - แก้ `server/.env` แล้วต้องปิดเปิด `npm run dev` ใหม่ (server ไม่โหลด `.env` ซ้ำเอง) · **ห้าม commit ค่า Secret**
 - อีเมลที่สมัครไว้แล้วจะไม่ถูกรวมบัญชีอัตโนมัติ (กันการยึดบัญชีคนอื่น) → ล็อกอินด้วยรหัสผ่านก่อนแล้วกด "เชื่อมต่อ" ที่หน้าโปรไฟล์
+
+## ชำระเงินผ่าน Opn Payments (โหมดทดสอบ · ไม่บังคับ · ฟรี)
+
+ตอนนี้ต่อจริงเฉพาะ **TrueMoney Wallet** (บัตร/PromptPay ยังเป็นแบบจำลอง) — ไม่ตั้ง key ระบบใช้การชำระเงินแบบจำลองตามเดิม
+
+1. สมัครฟรีที่ https://dashboard.omise.co (Opn Payments) → เมนู **Keys** คัดลอก key โหมด **Test** (`skey_test_…`, `pkey_test_…`)
+2. วางใน `server/.env` ช่อง `OMISE_SECRET_KEY` / `OMISE_PUBLIC_KEY` แล้วบันทึก (server รีสตาร์ตเอง) · **ห้าม commit**
+3. ฐานข้อมูลเดิมรัน `db/06-payment-gateway.sql` (คำสั่งเดียวกับไฟล์ 03–05)
+4. ลองจอง → ชำระเงิน → TrueMoney Wallet → หน้าของ Opn เลือก **Successful** (หรือ Failed) → กลับมาหน้าเว็บเป็น "ชำระแล้ว"
+   ยกเลิกการจองแล้วระบบสั่งคืนเงินที่ Opn ให้เอง (ดูใน dashboard ได้)
+
+โหมดทดสอบไม่มีการตัดเงินจริงและไม่มีค่าใช้จ่าย · ยอดขั้นต่ำต่อครั้ง ฿20 · รายละเอียดและเหตุผลของแต่ละขั้น: `docs/booking.md` ข้อ 12
 
 ## Deploy (Docker production)
 
@@ -119,6 +133,6 @@ docker compose -f docker-compose.prod.yml --env-file .env.production up -d --bui
 - API ตอบ error เป็น `{ "message": "..." }` เสมอ
 - วันที่ส่งเป็น `YYYY-MM-DD`, ราคาเป็นบาท, ราคาคำนวณที่ server เสมอ
 - API ที่ต้องล็อกอินใส่ `requireAuth` (JWT ใน cookie, ดู `middleware/auth.js`) แล้วใช้ `req.user.id` กรองข้อมูลของผู้ใช้เสมอ
-- แก้ `db/*.sql` เมื่อไหร่ ต้องแจ้งอีกคน — `03-booking.sql`, `04-demo-data.sql`, `05-admin.sql` รันซ้ำด้วย `psql -f` ได้เลยไม่เสียข้อมูล
+- แก้ `db/*.sql` เมื่อไหร่ ต้องแจ้งอีกคน — `03-booking.sql`, `04-demo-data.sql`, `05-admin.sql`, `06-payment-gateway.sql` รันซ้ำด้วย `psql -f` ได้เลยไม่เสียข้อมูล
   (ดูด้านบน) ส่วน `01`/`02` ต้องสร้างฐานข้อมูลใหม่ด้วย `docker compose down -v && docker compose up -d` (ข้อมูลเดิมหายหมด)
 - หา `TODO(...)` ในโค้ดเพื่อดูว่าต้องทำอะไรต่อ

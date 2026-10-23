@@ -64,6 +64,7 @@ const ICONS = {
   'trending-up': <path d="M22 7l-8.5 8.5-5-5L2 17M16 7h6v6" />,
   'trending-down': <path d="M22 17l-8.5-8.5-5 5L2 7M16 17h6v-6" />,
   external: <path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />,
+  wallet: <><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" /><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" /></>,
 };
 
 export default function Icon({ name, className = 'w-5 h-5', filled = false, strokeWidth = 2, ...rest }) {

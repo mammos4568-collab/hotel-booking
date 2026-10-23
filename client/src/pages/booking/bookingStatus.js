@@ -7,6 +7,14 @@ export const STATUS_META = {
   expired: { label: (tx) => tx('หมดเวลาชำระ', 'Expired'), className: 'bg-slate-200 text-slate-600' },
 };
 
+// วิธีชำระเงิน (payments.method) → ข้อความที่แสดง เช่น "บัตร •••• 4242", "PromptPay", "TrueMoney Wallet"
+export function paymentMethodLabel(method, cardLast4, tx) {
+  if (method === 'card') return `${tx('บัตร', 'Card')}${cardLast4 ? ` •••• ${cardLast4}` : ''}`;
+  if (method === 'promptpay') return 'PromptPay';
+  if (method === 'truemoney') return 'TrueMoney Wallet';
+  return tx('ไม่ทราบวิธี', 'Unknown method');
+}
+
 // payment_status ในฐานข้อมูล (Pending / Paid / Refunded / Expired) → ข้อความที่แสดง
 export function paymentLabel(status, tx) {
   const labels = {

@@ -9,7 +9,7 @@ Stack: **React (Vite + Tailwind v4) + Express + PostgreSQL 15** รันผ่�
 
 | | ขอบเขต | ไฟล์ |
 |---|---|---|
-| **ผู้ใช้เครื่องนี้ (ตัวหลัก)** | ค้นหา, หน้าโรงแรม, **จอง, ชำระเงิน**, การจองของฉัน, รีวิว, รายการโปรด, ผู้ช่วยแนะนำที่พัก, **หลังบ้าน (แอดมิน/เจ้าของโรงแรม)**, PDPA, UI กลาง, ฐานข้อมูล, deploy | `server/src/modules/search/`, `server/src/modules/booking/`, `server/src/modules/favorites/`, `server/src/modules/assistant/`, `server/src/modules/admin/`, `server/src/modules/privacy/`, `server/src/lib/`, `server/scripts/`, `server/test/`, `client/src/pages/search/`, `client/src/pages/booking/`, `client/src/pages/admin/`, `client/src/pages/legal/`, `client/src/components/`, `client/src/context/FavoritesContext.jsx`, `client/src/lib/`, `client/src/styles.css`, `db/` (เฉพาะ `03-`, `04-`, `05-`), `Dockerfile`, `docker-compose.prod.yml` |
+| **ผู้ใช้เครื่องนี้ (ตัวหลัก)** | ค้นหา, หน้าโรงแรม, **จอง, ชำระเงิน**, การจองของฉัน, รีวิว, รายการโปรด, ผู้ช่วยแนะนำที่พัก, **หลังบ้าน (แอดมิน/เจ้าของโรงแรม)**, PDPA, UI กลาง, ฐานข้อมูล, deploy | `server/src/modules/search/`, `server/src/modules/booking/`, `server/src/modules/favorites/`, `server/src/modules/assistant/`, `server/src/modules/admin/`, `server/src/modules/privacy/`, `server/src/lib/`, `server/scripts/`, `server/test/`, `client/src/pages/search/`, `client/src/pages/booking/`, `client/src/pages/admin/`, `client/src/pages/legal/`, `client/src/components/`, `client/src/context/FavoritesContext.jsx`, `client/src/lib/`, `client/src/styles.css`, `db/` (เฉพาะ `03-`, `04-`, `05-`, `06-`), `Dockerfile`, `docker-compose.prod.yml` |
 | **เพื่อนอีกคน** | สมัครสมาชิก/เข้าสู่ระบบ (JWT) | `server/src/modules/user/`, `server/src/middleware/auth.js`, `client/src/pages/user/` |
 
 > **ห้ามแก้ไฟล์ของเพื่อน** (`modules/user/`, `middleware/auth.js`, `pages/user/`)
@@ -40,7 +40,7 @@ Stack: **React (Vite + Tailwind v4) + Express + PostgreSQL 15** รันผ่�
 3. แก้ไฟล์ใน `db/` เมื่อไหร่ **ต้องบอกผู้ใช้ให้แจ้งเพื่อน**
    - `01-schema.sql`, `02-datas.sql` เป็นของทีม — อย่าแก้ ถ้าต้องเพิ่มตาราง/คอลัมน์ให้เพิ่มในไฟล์ใหม่
      แบบ `03-booking.sql` (ใช้ `IF NOT EXISTS` ให้รันซ้ำได้)
-   - `03-booking.sql`, `04-demo-data.sql`, `05-admin.sql` รันซ้ำได้ เพื่อนอัปเดตด้วย `psql -f` ได้เลยโดยไม่ต้องลบข้อมูล (ดูวิธีรัน)
+   - `03-booking.sql`, `04-demo-data.sql`, `05-admin.sql`, `06-payment-gateway.sql` รันซ้ำได้ เพื่อนอัปเดตด้วย `psql -f` ได้เลยโดยไม่ต้องลบข้อมูล (ดูวิธีรัน)
 4. ผู้ใช้เป็นนักศึกษาและกำลังเรียนอยู่ — โค้ดส่วนสำคัญ (ทรานแซกชัน, การล็อกแถว,
    การกันจองซ้อน) ให้**อธิบายเหตุผลสั้นๆ** ว่าทำไมต้องเขียนแบบนี้ ไม่ใช่โยนโค้ดให้เฉยๆ
    โปรเจกต์นี้ต้องพรีเซนต์ ผู้ใช้ต้องตอบคำถามอาจารย์ได้ทุกบรรทัด
@@ -61,6 +61,7 @@ node server/test/concurrent-booking.js   # ทดสอบจองพร้อ�
 node server/test/multi-room.js           # จองหลายห้อง + จองพร้อมกันแบบหลายห้อง
 node server/test/protection.js           # ทดสอบ rate limit / เพดานจองค้าง / จ่ายผิด / คำหยาบ
 node server/test/favorites.js            # รายการโปรด
+node server/test/payment-methods.js      # วิธีชำระเงิน บัตร / PromptPay / TrueMoney Wallet (จำลอง)
 node server/test/assistant.js            # ผู้ช่วยแนะนำที่พัก (~120 ข้อ · ส่วนตีความไม่ต้องเปิด server)
 node server/test/admin.js                # หลังบ้าน 72 ข้อ (อ่าน server/.env เอง เพื่อตั้ง admin + ล้างข้อมูลทดสอบ)
 node --env-file=server/.env server/scripts/set-role.js <email> admin   # ตั้ง admin คนแรก (owner: เพิ่ม --hotels=1,2)
@@ -70,7 +71,7 @@ node --env-file=server/.env server/scripts/set-role.js <email> admin   # ตั�
 - เช็ก API http://localhost:3000/api/health
 - เข้า psql: `docker compose exec postgres psql -U agoda_admin -d agoda_db`
 - อัปเดต DB เดิมด้วยไฟล์ที่รันซ้ำได้ (ไม่ลบข้อมูล):
-  `docker compose exec -T postgres psql -U agoda_admin -d agoda_db -f /docker-entrypoint-initdb.d/03-booking.sql` (และ 04, 05)
+  `docker compose exec -T postgres psql -U agoda_admin -d agoda_db -f /docker-entrypoint-initdb.d/03-booking.sql` (และ 04, 05, 06)
 - `docker compose down -v` = **ลบข้อมูลทั้งหมด** ใช้เมื่อผู้ใช้สั่งเท่านั้น
 - production: `docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build` → http://localhost:8080
   (project แยกชื่อ `hotel-booking-prod` มี volume ของตัวเอง · `.env.production` ไม่ commit · ดู README หัวข้อ Deploy)
@@ -108,6 +109,9 @@ node --env-file=server/.env server/scripts/set-role.js <email> admin   # ตั�
   `loadHotel()` / `loadRoom()` ใน `modules/admin/scope.js` · ทุกการแก้ไขเรียก `logAction()` ใน transaction เดียวกับงาน
   (ห้ามใส่ข้อมูลส่วนตัวลูกค้าใน detail) · แก้จำนวนห้อง/ปฏิทินต้องล็อกแถว `rooms` ก่อนนับการจอง (แบบเดียวกับตอนจอง)
   · ตั้ง admin คนแรกด้วย `server/scripts/set-role.js` เท่านั้น (ไม่มี API ตั้งตัวเอง) — ดู `docs/admin.md`
+- ชำระเงินจริงผ่าน Opn Payments (ตั้ง `OMISE_SECRET_KEY` = เปิด · ตอนนี้เฉพาะ TrueMoney): สถานะ "จ่ายแล้ว" ต้องมาจากการ
+  ดึงรายการจาก Opn ด้วย secret key เท่านั้น (`retrieveCharge`) ห้ามเชื่อ query string หรือข้อมูลใน webhook ·
+  อัปเดตผลผ่าน `applyGatewayCharge()` ใน transaction ที่ล็อกแถวการจองเสมอ · ยกเลิก = คืนเงินที่ Opn ก่อนแก้ DB — ดู `docs/booking.md` ข้อ 12
 
 ---
 
@@ -124,13 +128,13 @@ room_inventories(room_id, date, available_rooms, price)                     -- �
 bookings(booking_id, booking_reference, user_id, property_id, room_id,
          check_in_date, check_out_date, num_guests, num_rooms*, total_amount,
          payment_status, booking_status, guest_name*, guest_email*, guest_phone*, special_requests*, ...)
-payments*(payment_id, booking_id, amount, method, card_last4, status, paid_at)
+payments*(payment_id, booking_id, amount, method, card_last4, status, paid_at, gateway_charge_id‡)  -- status: Success|Failed|Refunded|Pending
 favorites*(user_id, property_id, created_at)                                -- รายการโปรด PK (user_id, property_id)
 reviews(review_id, booking_id UNIQUE, user_id, property_id, rating, comment, ...)
 oauth_accounts(...)                                                         -- ของเพื่อน (login ผ่าน Google ฯลฯ)
 admin_audit_log†(log_id, user_id, action, entity_id, detail JSONB, created_at)  -- บันทึกการทำงานหลังบ้าน
 ```
-`*` = เพิ่มใน `03-booking.sql` · `†` = เพิ่มใน `05-admin.sql`
+`*` = เพิ่มใน `03-booking.sql` · `†` = เพิ่มใน `05-admin.sql` · `‡` = เพิ่มใน `06-payment-gateway.sql`
 
 **สิ่งที่ต้องรู้เกี่ยวกับ `bookings`:**
 

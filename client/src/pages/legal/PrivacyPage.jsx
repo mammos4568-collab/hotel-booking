@@ -94,8 +94,8 @@ export default function PrivacyPage() {
                   'Account: name, email, password (stored as a one-way hash), phone and photo if you add them, and any Google/Facebook/GitHub account you choose to link.'),
                 tx('การจอง: ชื่อผู้เข้าพัก อีเมล เบอร์โทร (ไม่บังคับ) คำขอพิเศษ วันเข้าพัก และจำนวนผู้เข้าพัก',
                   'Bookings: guest name, email, phone (optional), special requests, stay dates and number of guests.'),
-                tx('การชำระเงิน: วิธีชำระ ยอดเงิน เวลา และเลข 4 หลักท้ายของบัตรเท่านั้น — เราไม่เก็บเลขบัตรเต็ม วันหมดอายุ หรือรหัส CVC',
-                  'Payments: method, amount, time and only the last 4 digits of your card — we never store the full card number, expiry date or CVC.'),
+                tx('การชำระเงิน: วิธีชำระ ยอดเงิน เวลา และเลข 4 หลักท้ายของบัตรเท่านั้น — เราไม่เก็บเลขบัตรเต็ม วันหมดอายุ หรือรหัส CVC และไม่เก็บเบอร์ที่กรอกตอนจ่ายด้วย TrueMoney Wallet',
+                  'Payments: method, amount, time and only the last 4 digits of your card — we never store the full card number, expiry date or CVC, nor the phone number you enter for TrueMoney Wallet.'),
                 tx('รีวิว: คะแนนและความคิดเห็นที่คุณเขียน ซึ่งแสดงต่อสาธารณะพร้อมชื่อแบบย่อ (เช่น "Ploy S.")',
                   'Reviews: your rating and comment, shown publicly with a shortened name (e.g. "Ploy S.").'),
                 tx('รายการโปรด: ที่พักที่คุณกดหัวใจเก็บไว้ และเวลาที่กด — ลบได้ทุกเมื่อ และลบทั้งหมดเมื่อลบบัญชี',
@@ -136,6 +136,8 @@ export default function PrivacyPage() {
             <Bullets
               items={[
                 tx('ข้อมูลผู้เข้าพักใช้เพื่อการเข้าพักกับที่พักที่คุณจองเท่านั้น เราไม่ขายข้อมูลส่วนบุคคลให้ใคร', 'Guest details are used only for your stay at the property you booked. We never sell personal data.'),
+                tx('จ่ายด้วย TrueMoney ผ่าน Opn Payments (ผู้ให้บริการรับชำระเงิน — ในโปรเจกต์นี้ใช้โหมดทดสอบ): เราส่งให้ Opn แค่ยอดเงินและเลขที่การจอง ส่วนการยืนยันตัวตนทำในแอป TrueMoney เราไม่ได้รับรหัสหรือข้อมูลบัญชีของคุณ',
+                  'Paying with TrueMoney via Opn Payments (our payment processor — test mode in this project): we send Opn only the amount and booking reference; you confirm the payment in the TrueMoney app, and we never receive your wallet credentials or account details.'),
                 tx('เจ้าของที่พักที่คุณจอง (และผู้ดูแลระบบ) เห็นชื่อ อีเมล เบอร์โทร และคำขอพิเศษของการจองนั้น เพื่อเตรียมการเข้าพักและติดต่อคุณ — เจ้าของแต่ละรายเห็นเฉพาะการจองของที่พักตัวเอง',
                   'The property you book (and our admins) can see the guest name, email, phone and special requests of that booking to prepare your stay and contact you — each owner sees only bookings for their own property.'),
                 tx('หน้าเว็บโหลดไฟล์จากบริการภายนอก ได้แก่ ฟอนต์ (Google Fonts) รูปภาพ (Unsplash) แผนที่ (OpenStreetMap) และไอคอนธง (flagcdn) ซึ่งจะเห็น IP address ของคุณตามปกติของการโหลดไฟล์',

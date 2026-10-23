@@ -4,6 +4,7 @@
 // ============================================================
 import { HOLD_MINUTES } from './availability.js';
 import { todayInBangkok } from './dates.js';
+import { refundCharge, retrieveCharge } from './opn.js';
 
 export const BOOKING_SELECT = `
   SELECT b.booking_id, b.booking_reference, b.user_id,
@@ -22,7 +23,7 @@ export const BOOKING_SELECT = `
     LEFT JOIN rooms r ON r.room_id = b.room_id
     LEFT JOIN LATERAL (
       SELECT method, card_last4, paid_at FROM payments
-       WHERE booking_id = b.booking_id AND status <> 'Failed' ORDER BY paid_at DESC LIMIT 1
+       WHERE booking_id = b.booking_id AND status IN ('Success', 'Refunded') ORDER BY paid_at DESC LIMIT 1
     ) pay ON TRUE
     LEFT JOIN reviews rv ON rv.booking_id = b.booking_id`;
 
@@ -104,6 +105,22 @@ export async function findBooking(db, bookingId) {
 // ใช้ทั้งลูกค้ายกเลิกเอง และหลังบ้านยกเลิกให้ (เช่น ที่พักมีปัญหา)
 export async function cancelBooking(client, row) {
   const wasPaid = String(row.payment_status).toLowerCase() === 'paid';
+  if (wasPaid) {
+    // จ่ายผ่าน payment gateway จริง (Opn) → สั่งคืนเงินที่ gateway "ก่อน" แก้ฐานข้อมูล
+    // ถ้าคืนเงินไม่สำเร็จจะ throw → ROLLBACK ทั้ง transaction การจองยังไม่ถูกยกเลิก
+    // (ไม่มีทางเกิด "ยกเลิกแล้วแต่เงินไม่คืน") — ผู้ใช้ลองกดยกเลิกใหม่ได้
+    const { rows: gatewayPayments } = await client.query(
+      `SELECT gateway_charge_id, amount FROM payments
+        WHERE booking_id = $1 AND status = 'Success' AND gateway_charge_id IS NOT NULL
+          FOR UPDATE`,
+      [row.booking_id]
+    );
+    for (const payment of gatewayPayments) {
+      // ถาม Opn ก่อนว่าคืนไปแล้วหรือยัง (เช่น รอบก่อนสั่งคืนสำเร็จแต่ COMMIT ไม่ผ่าน) → ไม่สั่งคืนซ้ำ
+      const charge = await retrieveCharge(payment.gateway_charge_id);
+      if ((charge.refunded_amount ?? 0) < charge.amount) await refundCharge(payment.gateway_charge_id, payment.amount);
+    }
+  }
   await client.query(
     `UPDATE bookings
         SET booking_status = 'Cancelled',
