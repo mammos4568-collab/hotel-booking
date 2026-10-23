@@ -17,6 +17,8 @@
 - [x] 8. จองหลายห้อง (ประเภทเดียวกัน) ในครั้งเดียว — `num_rooms` · ทดสอบ `server/test/multi-room.js`
 - [x] 9. รายการโปรด (กดหัวใจ) — `server/src/modules/favorites/` · ทดสอบ `server/test/favorites.js`
 - [x] 10. เตรียม deploy (Docker production) — `Dockerfile`, `docker-compose.prod.yml`
+- [x] 11. เตรียมขึ้น VPS จริง (HTTPS ด้วย Caddy) — `Caddyfile`, `--profile https` · ขั้นตอน `docs/deploy-vps.md`
+- [ ] 12. ขึ้นเว็บบน VPS จริง แล้วตรวจตาม `docs/deploy-vps.md` ข้อ 5
 
 > **หมายเหตุ:** สเปกเดิมออกแบบกับ schema ชุดแรก (ตาราง `rooms` = ห้องจริงทีละห้อง + EXCLUDE constraint)
 > แต่ทีมเปลี่ยน schema เป็นแบบ Agoda (`db/01-schema.sql`) ซึ่ง 1 แถวใน `rooms` = **ประเภทห้อง** ที่มี
@@ -296,6 +298,13 @@ PASS  ยกเลิกแล้วห้องกลับมาว่าง�
   — ช่องไหนเว้นว่างจะปิดช่องทางนั้น กดแล้วหน้าเว็บบอกว่ายังไม่เปิด (เดิม production ไม่ได้ส่งค่าเหล่านี้เข้า container เลย)
 - ทดสอบแล้วบนเครื่อง: หน้าเว็บ/ลิงก์ลึก (`/hotels/7`), API, สมัครสมาชิก, ผู้ช่วย, header ความปลอดภัย,
   ไฟล์ `/assets` cache 1 ปี, เรียก API จากโดเมนอื่นได้ 403
+- **HTTPS บน VPS** (`--profile https`): Caddy (`Caddyfile`) ขอใบรับรองฟรีจาก Let's Encrypt + ต่ออายุเอง,
+  redirect http → https, ส่ง HSTS, ซ่อน header `Server` / `Via`, ไม่เก็บ access log · โดเมนมาจาก `PUBLIC_URL` ค่าเดียวกับแอป
+- แอปผูกพอร์ตกับ `127.0.0.1` — บน Linux พอร์ตที่ Docker เปิดแบบ `0.0.0.0` ทะลุ ufw ได้ (http ธรรมดาจะหลุดออกอินเทอร์เน็ต)
+- ทดสอบบนเครื่องด้วย `PUBLIC_URL=https://localhost` (Caddy ออกใบรับรองภายในให้ localhost) แยก project ไม่แตะข้อมูลจริง:
+  `/api/health` ผ่าน https, http → 308 ไป https, คุกกี้ล็อกอินได้ `HttpOnly; SameSite=Lax; Secure`, Origin อื่นได้ 403,
+  `server/test/payment-methods.js` ผ่านทุกข้อผ่าน Caddy
+- ขั้นตอนขึ้น VPS ทีละขั้น + เช็กลิสต์หลังขึ้นเว็บ: `docs/deploy-vps.md`
 
 ---
 

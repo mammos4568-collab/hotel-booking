@@ -9,7 +9,7 @@ Stack: **React (Vite + Tailwind v4) + Express + PostgreSQL 15** รันผ่�
 
 | | ขอบเขต | ไฟล์ |
 |---|---|---|
-| **ผู้ใช้เครื่องนี้ (ตัวหลัก)** | ค้นหา, หน้าโรงแรม, **จอง, ชำระเงิน**, การจองของฉัน, รีวิว, รายการโปรด, ผู้ช่วยแนะนำที่พัก, **หลังบ้าน (แอดมิน/เจ้าของโรงแรม)**, PDPA, UI กลาง, ฐานข้อมูล, deploy | `server/src/modules/search/`, `server/src/modules/booking/`, `server/src/modules/favorites/`, `server/src/modules/assistant/`, `server/src/modules/admin/`, `server/src/modules/privacy/`, `server/src/lib/`, `server/scripts/`, `server/test/`, `client/src/pages/search/`, `client/src/pages/booking/`, `client/src/pages/admin/`, `client/src/pages/legal/`, `client/src/components/`, `client/src/context/FavoritesContext.jsx`, `client/src/lib/`, `client/src/styles.css`, `db/` (เฉพาะ `03-`, `04-`, `05-`, `06-`), `Dockerfile`, `docker-compose.prod.yml` |
+| **ผู้ใช้เครื่องนี้ (ตัวหลัก)** | ค้นหา, หน้าโรงแรม, **จอง, ชำระเงิน**, การจองของฉัน, รีวิว, รายการโปรด, ผู้ช่วยแนะนำที่พัก, **หลังบ้าน (แอดมิน/เจ้าของโรงแรม)**, PDPA, UI กลาง, ฐานข้อมูล, deploy | `server/src/modules/search/`, `server/src/modules/booking/`, `server/src/modules/favorites/`, `server/src/modules/assistant/`, `server/src/modules/admin/`, `server/src/modules/privacy/`, `server/src/lib/`, `server/scripts/`, `server/test/`, `client/src/pages/search/`, `client/src/pages/booking/`, `client/src/pages/admin/`, `client/src/pages/legal/`, `client/src/components/`, `client/src/context/FavoritesContext.jsx`, `client/src/lib/`, `client/src/styles.css`, `db/` (เฉพาะ `03-`, `04-`, `05-`, `06-`), `Dockerfile`, `docker-compose.prod.yml`, `Caddyfile` |
 | **เพื่อนอีกคน** | สมัครสมาชิก/เข้าสู่ระบบ (JWT) | `server/src/modules/user/`, `server/src/middleware/auth.js`, `client/src/pages/user/` |
 
 > **ห้ามแก้ไฟล์ของเพื่อน** (`modules/user/`, `middleware/auth.js`, `pages/user/`)
@@ -75,6 +75,8 @@ node --env-file=server/.env server/scripts/set-role.js <email> admin   # ตั�
 - `docker compose down -v` = **ลบข้อมูลทั้งหมด** ใช้เมื่อผู้ใช้สั่งเท่านั้น
 - production: `docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build` → http://localhost:8080
   (project แยกชื่อ `hotel-booking-prod` มี volume ของตัวเอง · `.env.production` ไม่ commit · ดู README หัวข้อ Deploy)
+- ขึ้น VPS จริง (HTTPS): ตั้ง `PUBLIC_URL=https://<โดเมน>` + `TRUST_PROXY=1` แล้วเพิ่ม `--profile https`
+  (Caddy ทำ HTTPS ให้ · แอปผูกพอร์ตกับ `127.0.0.1`) — ขั้นตอนเต็มที่ `docs/deploy-vps.md`
 
 เครื่องนี้เป็น Windows — ใช้ `copy` ไม่ใช่ `cp`, ใช้ `cd /d D:\hotel-booking` เวลาเปลี่ยนไดรฟ์
 เครื่องนี้มี PostgreSQL ของ Windows ใช้พอร์ต 5432 อยู่ → `docker-compose.override.yml` (ไม่ commit)

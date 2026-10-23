@@ -1,0 +1,23 @@
+# ============================================================
+# Caddy — ประตูหน้าเว็บบน VPS (ใช้กับ docker-compose.prod.yml --profile https)
+#   - ทำ HTTPS ให้เอง: ขอใบรับรองฟรีจาก Let's Encrypt ครั้งแรก แล้วต่ออายุอัตโนมัติ
+#   - เปิดแบบ http:// → redirect ไป https:// ให้เอง
+#   - ส่งต่อทุกคำขอไปที่แอป (app:3000) ทาง network ภายในของ compose — แอปไม่ต้องเปิดพอร์ตออกนอกเครื่อง
+# ที่อยู่เว็บมาจาก PUBLIC_URL ใน .env.production เช่น https://myhotel.duckdns.org
+#   โดเมนต้องชี้ (A record) มาที่ IP ของ VPS และเปิดพอร์ต 80/443 ก่อน ไม่งั้นขอใบรับรองไม่ผ่าน
+# ไม่มีคำสั่ง log → Caddy ไม่เก็บ access log (IP / URL ที่ผู้ใช้เปิด) โดยไม่จำเป็น (PDPA)
+# ดูขั้นตอนเต็ม: docs/deploy-vps.md
+# ============================================================
+{$PUBLIC_URL} {
+	encode zstd gzip
+	header {
+		# บังคับเบราว์เซอร์ใช้ https กับโดเมนนี้ 1 ปี (กันโดนดักเปลี่ยนเป็น http กลางทาง)
+		Strict-Transport-Security "max-age=31536000"
+		# ไม่บอกคนนอกว่าใช้ Caddy (แบบเดียวกับที่แอปปิด X-Powered-By)
+		-Server
+		-Via
+	}
+	# Caddy ใส่ X-Forwarded-For / X-Forwarded-Proto ให้เอง → แอปตั้ง TRUST_PROXY=1 แล้วได้ IP จริงของผู้ใช้
+	# (rate limit นับแยกรายคน ไม่ใช่นับทุกคนเป็น IP ของ Caddy)
+	reverse_proxy app:3000
+}

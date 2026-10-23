@@ -106,9 +106,11 @@ docker compose -f docker-compose.prod.yml --env-file .env.production up -d --bui
 # 3. เปิด http://localhost:8080  ·  หยุด: ... down  (เพิ่ม -v = ลบฐานข้อมูล production ทิ้งด้วย)
 ```
 
-- ฐานข้อมูลสร้างตาราง + ข้อมูลตัวอย่างจาก `db/` อัตโนมัติครั้งแรก และไม่เปิดพอร์ตออกนอกเครื่อง
-- ใช้งานจริงต้องเป็น **HTTPS** (คุกกี้ล็อกอินเป็น `Secure` เมื่อ `NODE_ENV=production`) — อยู่หลัง reverse proxy
-  (Nginx / Caddy / Render ฯลฯ) ให้ตั้ง `TRUST_PROXY=1` และ `PUBLIC_URL` เป็นโดเมนจริง
+- ฐานข้อมูลสร้างตาราง + ข้อมูลตัวอย่างจาก `db/` อัตโนมัติครั้งแรก และไม่เปิดพอร์ตออกนอกเครื่อง ·
+  แอปเปิดพอร์ต 8080 ให้เฉพาะในเครื่อง (`127.0.0.1`)
+- ใช้งานจริงต้องเป็น **HTTPS** (คุกกี้ล็อกอินเป็น `Secure` เมื่อ `NODE_ENV=production`) — บน VPS ตั้ง
+  `PUBLIC_URL=https://<โดเมน>` + `TRUST_PROXY=1` แล้วเพิ่ม `--profile https` → Caddy (`Caddyfile`) ขอใบรับรองฟรีและต่ออายุให้เอง
+  **ขั้นตอนเต็ม (VM, โดเมนฟรี, firewall, admin, GitHub/Opn, อัปเดต, backup): `docs/deploy-vps.md`**
 - เข้าสู่ระบบด้วย Google / GitHub / Facebook บน production: ใส่ Client ID / Secret ใน `.env.production`
   แล้วลงทะเบียน callback กับแต่ละเจ้าเป็น `<PUBLIC_URL>/api/auth/<google|github|facebook>/callback` (ระบบต่อ URL ให้เอง)
 - ตั้ง admin คนแรกบน production:

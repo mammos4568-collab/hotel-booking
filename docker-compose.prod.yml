@@ -5,6 +5,9 @@
 #   2) docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
 #   3) เปิด http://localhost:8080
 #
+# ขึ้น VPS จริงด้วย HTTPS: ตั้ง PUBLIC_URL=https://<โดเมน> + TRUST_PROXY=1 แล้วเพิ่ม --profile https
+#   (เปิด Caddy ที่พอร์ต 80/443 ทำ HTTPS ให้เอง) — ขั้นตอนเต็มดู docs/deploy-vps.md
+#
 # ชื่อ project แยกจาก docker-compose.yml (ตอนพัฒนา) → ฐานข้อมูล/volume ไม่ปนกัน
 # ============================================================
 name: hotel-booking-prod
@@ -19,7 +22,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-agoda_db}
     volumes:
       - db_data:/var/lib/postgresql/data
-      # สร้างตาราง + ข้อมูลตัวอย่างอัตโนมัติ "ครั้งแรก" ที่ volume ยังว่าง (01 → 04 ตามลำดับชื่อไฟล์)
+      # สร้างตาราง + ข้อมูลตัวอย่างอัตโนมัติ "ครั้งแรก" ที่ volume ยังว่าง (01 → 06 ตามลำดับชื่อไฟล์)
       - ./db:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
@@ -57,7 +60,31 @@ services:
       OMISE_SECRET_KEY: ${OMISE_SECRET_KEY:-}
       OMISE_PUBLIC_KEY: ${OMISE_PUBLIC_KEY:-}
     ports:
-      - "${APP_PORT:-8080}:3000"
+      # ผูกกับ 127.0.0.1 = เปิดได้จากเครื่องนี้เท่านั้น (http://localhost:8080) คนนอกเข้าทาง Caddy (https) อย่างเดียว
+      # สำคัญบน Linux: พอร์ตที่ Docker เปิดแบบ 0.0.0.0 ทะลุ firewall (ufw) ได้ → http ธรรมดาจะหลุดออกอินเทอร์เน็ต
+      - "127.0.0.1:${APP_PORT:-8080}:3000"
+
+  # HTTPS บน VPS — ทำงานเฉพาะตอนสั่ง --profile https (รันบนเครื่องตัวเองแบบปกติจะไม่มี container นี้)
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["https"]
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      # Caddyfile อ่านโดเมนจาก PUBLIC_URL (ต้องขึ้นต้น https:// และไม่มี / ท้าย) — ค่าเดียวกับที่แอปใช้
+      PUBLIC_URL: ${PUBLIC_URL:-}
+    ports:
+      - "80:80"       # ใช้ยืนยันว่าเป็นเจ้าของโดเมนตอนขอใบรับรอง + redirect http → https
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # ใบรับรองต้องเก็บไว้ใน volume — ไม่งั้นขอใหม่ทุกครั้งที่สร้าง container ใหม่ (Let's Encrypt จำกัดจำนวนครั้งต่อสัปดาห์)
+      - caddy_data:/data
+      - caddy_config:/config
 
 volumes:
   db_data:
+  caddy_data:
+  caddy_config:
