@@ -13,7 +13,7 @@ import {
   Field, Modal, Notice, PageHeader, baht, buttonDanger, buttonPrimary, buttonSecondary, card, inputClass, useAdminData,
 } from './adminUi.jsx';
 import HotelApproval from './HotelApproval.jsx';
-import HotelPhotos, { HotelPhotoDraft, uploadDraftPhotos } from './HotelPhotos.jsx';
+import HotelPhotos, { PhotoDraft, PhotoManager, uploadDraftPhotos } from './HotelPhotos.jsx';
 
 const EMPTY_HOTEL = {
   name: '', propertyType: 'Hotel', starRating: '', city: '', address: '', country: 'Thailand',
@@ -25,26 +25,53 @@ const EMPTY_ROOM = {
 const STAR_OPTIONS = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
 const asText = (value) => (value === null || value === undefined ? '' : String(value));
 
+// หน้าต่างเพิ่ม/แก้ประเภทห้อง — รูปห้องเลือกจากเครื่องได้เหมือนรูปโรงแรม (สูงสุด 5 รูป)
+//   เพิ่มห้องใหม่: ยังไม่มีรหัสห้อง → เก็บรูปไว้ในเบราว์เซอร์ (PhotoDraft) แล้วอัปหลังบันทึกห้องเสร็จ
+//   แก้ห้องเดิม: อัป/เรียง/ลบรูปที่ server ทันที (PhotoManager) — ไม่ต้องกดบันทึก
+//   onClose(photosChanged) → หน้าโรงแรมโหลดรูปปกของห้องใหม่ถ้ามีการแก้รูป
 function RoomFormModal({ hotelId, room, onClose, onSaved }) {
   const { tx } = useLanguage();
   const [form, setForm] = useState(() => (room ? {
     ...EMPTY_ROOM,
     ...Object.fromEntries(Object.keys(EMPTY_ROOM).map((key) => [key, key === 'breakfastIncluded' ? Boolean(room[key]) : asText(room[key])])),
   } : EMPTY_ROOM));
+  const [draftPhotos, setDraftPhotos] = useState([]);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photosChanged, setPhotosChanged] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
   const set = (key) => (event) => setForm({ ...form, [key]: event.target.type === 'checkbox' ? event.target.checked : event.target.value });
+  const close = () => onClose(photosChanged);
 
   const submit = async (event) => {
     event.preventDefault();
     setSaving(true);
     setError('');
     try {
-      await api(room ? `/admin/rooms/${room.id}` : `/admin/hotels/${hotelId}/rooms`, { method: room ? 'PUT' : 'POST', body: form });
-      onSaved(room ? tx('บันทึกประเภทห้องแล้ว', 'Room type saved') : tx('เพิ่มประเภทห้องแล้ว', 'Room type added'));
+      const result = await api(room ? `/admin/rooms/${room.id}` : `/admin/hotels/${hotelId}/rooms`, { method: room ? 'PUT' : 'POST', body: form });
+      if (room) {
+        onSaved(tx('บันทึกประเภทห้องแล้ว', 'Room type saved'));
+        return;
+      }
+      // ได้รหัสห้องแล้ว → อัปรูปที่เลือกไว้ตามลำดับ (รูปแรก = รูปหลักของห้อง)
+      const photos = await uploadDraftPhotos(`/admin/rooms/${result.room.id}/images`, draftPhotos, (done, total) => (
+        setProgress(tx(`กำลังอัปรูป ${done}/${total}…`, `Uploading photo ${done}/${total}…`))
+      ));
+      if (photos.failed) {
+        onSaved(tx(
+          `เพิ่มประเภทห้องแล้ว แต่อัปรูปไม่สำเร็จ ${photos.failed} รูป (${photos.error}) — กด "แก้ไข" ที่ห้องนี้เพื่อเพิ่มรูปอีกครั้ง`,
+          `Room type added, but ${photos.failed} photo(s) failed to upload (${photos.error}) — edit the room to add them again`,
+        ), 'error');
+        return;
+      }
+      onSaved(photos.uploaded
+        ? tx(`เพิ่มประเภทห้องพร้อมรูป ${photos.uploaded} รูปแล้ว`, `Room type added with ${photos.uploaded} photo(s)`)
+        : tx('เพิ่มประเภทห้องแล้ว', 'Room type added'));
     } catch (err) {
       setError(err.message);
       setSaving(false);
+      setProgress('');
     }
   };
 
@@ -53,11 +80,13 @@ function RoomFormModal({ hotelId, room, onClose, onSaved }) {
       open
       wide
       title={room ? tx(`แก้ไข ${room.name}`, `Edit ${room.name}`) : tx('เพิ่มประเภทห้อง', 'Add room type')}
-      onClose={saving ? () => {} : onClose}
+      onClose={saving ? () => {} : close}
       footer={(
         <>
-          <button type="button" onClick={onClose} disabled={saving} className={buttonSecondary}>{tx('ยกเลิก', 'Cancel')}</button>
-          <button type="submit" form="room-form" disabled={saving} className={buttonPrimary}>{saving ? tx('กำลังบันทึก…', 'Saving…') : tx('บันทึก', 'Save')}</button>
+          <button type="button" onClick={close} disabled={saving} className={buttonSecondary}>{tx('ยกเลิก', 'Cancel')}</button>
+          <button type="submit" form="room-form" disabled={saving || photoBusy} className={buttonPrimary}>
+            {saving ? progress || tx('กำลังบันทึก…', 'Saving…') : tx('บันทึก', 'Save')}
+          </button>
         </>
       )}
     >
@@ -84,9 +113,39 @@ function RoomFormModal({ hotelId, room, onClose, onSaved }) {
           <input type="checkbox" checked={form.breakfastIncluded} onChange={set('breakfastIncluded')} className="h-4 w-4 rounded accent-brand-600" />
           {tx('รวมอาหารเช้า', 'Breakfast included')}
         </label>
-        <Field label={tx('ลิงก์รูปห้อง', 'Room image URL')} hint="https://…" className="sm:col-span-2">
-          <input type="url" value={form.imageUrl} onChange={set('imageUrl')} maxLength={1000} className={inputClass} />
-        </Field>
+        <div className="sm:col-span-2">
+          {room ? (
+            <PhotoManager
+              compact
+              endpoint={`/admin/rooms/${room.id}/images`}
+              title={tx('รูปห้อง', 'Room photos')}
+              description={tx('รูปแรกคือรูปหลักของห้องที่ลูกค้าเห็น (กด ★ เพื่อตั้งเป็นรูปหลัก) · เพิ่ม/เรียง/ลบรูปมีผลทันที ไม่ต้องกดบันทึก', 'The first photo is the one guests see first (press ★ to change it) · photo changes apply right away — no need to press Save')}
+              onChange={() => setPhotosChanged(true)}
+            />
+          ) : (
+            <PhotoDraft
+              photos={draftPhotos}
+              onChange={setDraftPhotos}
+              onBusyChange={setPhotoBusy}
+              disabled={saving}
+              title={tx('รูปห้อง', 'Room photos')}
+              hint={tx('รูปแรกคือรูปหลักของห้องที่ลูกค้าเห็น (กด ★ เพื่อตั้งเป็นรูปหลัก) · ระบบครอปเป็น 3:2 และย่อเป็น 1200×800 ให้อัตโนมัติ · รูปจะอัปโหลดตอนกด "บันทึก"', 'The first photo is the one guests see first (press ★ to change it) · photos are cropped to 3:2 and resized to 1200×800 automatically · they upload when you press "Save"')}
+            />
+          )}
+        </div>
+        {/* ลิงก์รูปจากเว็บอื่น = ทางเลือกสำรอง (ข้อมูลตัวอย่างใช้แบบนี้) — พับไว้เหมือนในฟอร์มโรงแรม */}
+        <details className="sm:col-span-2">
+          <summary className="cursor-pointer select-none text-xs font-bold text-slate-600 hover:text-slate-900">
+            {tx('ใช้ลิงก์รูปจากเว็บแทน (ไม่บังคับ)', 'Use an image link instead (optional)')}
+            {form.imageUrl && <span className="font-semibold text-emerald-700"> · {tx('ใส่ลิงก์ไว้แล้ว', 'link set')}</span>}
+          </summary>
+          <div className="mt-2 space-y-2">
+            <input type="url" value={form.imageUrl} onChange={set('imageUrl')} maxLength={1000} placeholder="https://…" aria-label={tx('ลิงก์รูปห้อง', 'Room image link')} className={inputClass} />
+            <p className="text-xs text-slate-400">
+              {tx('ลูกค้าเห็นรูปจากลิงก์นี้เฉพาะตอนที่ห้องยังไม่มีรูปอัปโหลด', 'Guests only see this image while the room has no uploaded photos')}
+            </p>
+          </div>
+        </details>
         <Field label={tx('คำอธิบายห้อง', 'Description')} className="sm:col-span-2">
           <textarea value={form.description} onChange={set('description')} maxLength={1000} rows={3} className={inputClass} />
         </Field>
@@ -175,7 +234,7 @@ export default function HotelEditorPage() {
         reload();
       } else {
         // ได้รหัสโรงแรมแล้ว → อัปรูปที่เลือกไว้ตามลำดับ (รูปแรก = รูปปก) แล้วไปหน้าแก้ไขพร้อมผลการอัป
-        const photos = await uploadDraftPhotos(result.hotel.id, draftPhotos, (done, total) => (
+        const photos = await uploadDraftPhotos(`/admin/hotels/${result.hotel.id}/images`, draftPhotos, (done, total) => (
           setProgress(tx(`กำลังอัปรูป ${done}/${total}…`, `Uploading photo ${done}/${total}…`))
         ));
         setDraftPhotos([]);
@@ -267,7 +326,14 @@ export default function HotelEditorPage() {
         {/* หน้าเพิ่มโรงแรม: เลือกรูปจากเครื่องได้เลย (อัปหลังกดเพิ่มโรงแรม) · หน้าแก้ไขมีส่วน "รูปโรงแรม" แยกด้านล่างฟอร์ม */}
         {!hotel && (
           <div className="sm:col-span-2">
-            <HotelPhotoDraft photos={draftPhotos} onChange={setDraftPhotos} onBusyChange={setPhotoBusy} disabled={saving} />
+            <PhotoDraft
+              photos={draftPhotos}
+              onChange={setDraftPhotos}
+              onBusyChange={setPhotoBusy}
+              disabled={saving}
+              title={tx('รูปโรงแรม', 'Photos')}
+              hint={tx('รูปแรกคือรูปปกในหน้าค้นหา (กด ★ เพื่อตั้งเป็นรูปปก) · ระบบครอปเป็น 3:2 และย่อเป็น 1200×800 ให้อัตโนมัติ · รูปจะอัปโหลดตอนกด "เพิ่มโรงแรม"', 'The first photo is the cover in search results (press ★ to change it) · photos are cropped to 3:2 and resized to 1200×800 automatically · they upload when you press "Create hotel"')}
+            />
           </div>
         )}
         {/* ลิงก์รูปจากเว็บอื่น = ทางเลือกสำรอง (ข้อมูลตัวอย่างใช้แบบนี้) — พับไว้ ไม่ให้สับสนกับการอัปรูป */}
@@ -341,6 +407,19 @@ export default function HotelEditorPage() {
             <ul className="grid gap-3">
               {hotel.rooms.map((room) => (
                 <li key={room.id} className={`${card} flex flex-col gap-3 p-4 sm:flex-row sm:items-center`}>
+                  {/* รูปหลักที่ลูกค้าเห็น (รูปอัปโหลดลำดับแรก หรือลิงก์รูปสำรอง) */}
+                  <div className="relative h-32 shrink-0 overflow-hidden rounded-2xl sm:h-16 sm:w-24">
+                    {room.coverUrl ? (
+                      <SmartImage src={room.coverUrl} alt={room.name} width={240} className="h-full w-full" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-slate-100 text-slate-400" title={tx('ยังไม่มีรูป', 'No photo yet')}>
+                        <Icon name="image" className="h-6 w-6" />
+                      </div>
+                    )}
+                    {room.photoCount > 0 && (
+                      <span className="absolute bottom-1 right-1 rounded-full bg-slate-900/70 px-1.5 text-[10px] font-bold text-white">{room.photoCount}/5</span>
+                    )}
+                  </div>
                   <div className="min-w-0 flex-1">
                     <p className="font-bold text-slate-900">{room.name}</p>
                     <p className="text-sm text-slate-500">
@@ -373,10 +452,13 @@ export default function HotelEditorPage() {
         <RoomFormModal
           hotelId={hotel.id}
           room={roomDialog.room}
-          onClose={() => setRoomDialog(null)}
-          onSaved={(text) => {
+          onClose={(photosChanged) => {
             setRoomDialog(null);
-            setMessage({ tone: 'success', text });
+            if (photosChanged) reload(); // แก้รูปห้องแล้วกดปิด → โหลดรูปปกของห้องใหม่
+          }}
+          onSaved={(text, tone = 'success') => {
+            setRoomDialog(null);
+            setMessage({ tone, text });
             reload();
           }}
         />

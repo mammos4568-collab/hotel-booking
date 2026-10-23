@@ -8,7 +8,7 @@ import {
 } from '../../lib/hotelSearch.js';
 import { FEATURES, FEATURE_KEYS } from '../../lib/hotelFeatures.js';
 import { publicHotelSql } from '../../lib/hotelApproval.js';
-import { hotelImageUrl } from '../../lib/hotelImages.js';
+import { hotelImageUrl, roomImageUrl } from '../../lib/hotelImages.js';
 import { LANDMARK_BY_KEY } from '../../lib/landmarks.js';
 
 const router = Router();
@@ -135,20 +135,25 @@ router.get('/', async (req, res, next) => {
 // GET /api/hotels/:id?checkIn=&checkOut=&guests=&rooms=
 // ข้อมูลโรงแรม + ทุกประเภทห้อง พร้อมห้องว่างและราคารวมของช่วงวันที่เลือก
 // ---------------------------------------------------------------------------
-// GET /api/hotels/images/:imageId — ไฟล์รูปโรงแรมที่เจ้าของอัปโหลด (สาธารณะเหมือนหน้าโรงแรม)
-//   รูปไม่เคยถูกแก้ทับ (อัปใหม่ = id ใหม่) → ให้เบราว์เซอร์เก็บ cache ได้ 1 ปี ไม่ต้องโหลดซ้ำทุกครั้งที่เปิดหน้า
-router.get('/images/:imageId', async (req, res, next) => {
-  try {
-    const imageId = Number(req.params.imageId);
-    if (!Number.isInteger(imageId) || imageId <= 0 || imageId > 2_147_483_647) throw httpError(400, 'รหัสรูปไม่ถูกต้อง');
-    const { rows: [image] } = await pool.query('SELECT mime_type, data FROM property_images WHERE image_id = $1', [imageId]);
-    if (!image) throw httpError(404, 'ไม่พบรูปนี้');
-    res.set({ 'Content-Type': image.mime_type, 'Cache-Control': 'public, max-age=31536000, immutable' });
-    res.send(image.data);
-  } catch (error) {
-    next(error);
-  }
-});
+// GET /api/hotels/images/:imageId · /api/hotels/room-images/:imageId — ไฟล์รูปโรงแรม/รูปห้องที่เจ้าของอัปโหลด
+//   (สาธารณะเหมือนหน้าโรงแรม) รูปไม่เคยถูกแก้ทับ (อัปใหม่ = id ใหม่) → ให้เบราว์เซอร์เก็บ cache ได้ 1 ปี
+//   ไม่ต้องโหลดซ้ำทุกครั้งที่เปิดหน้า · ชื่อตารางเป็นค่าคงที่ในโค้ด ไม่ได้มาจากผู้ใช้
+function sendImage(table) {
+  return async (req, res, next) => {
+    try {
+      const imageId = Number(req.params.imageId);
+      if (!Number.isInteger(imageId) || imageId <= 0 || imageId > 2_147_483_647) throw httpError(400, 'รหัสรูปไม่ถูกต้อง');
+      const { rows: [image] } = await pool.query(`SELECT mime_type, data FROM ${table} WHERE image_id = $1`, [imageId]);
+      if (!image) throw httpError(404, 'ไม่พบรูปนี้');
+      res.set({ 'Content-Type': image.mime_type, 'Cache-Control': 'public, max-age=31536000, immutable' });
+      res.send(image.data);
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+router.get('/images/:imageId', sendImage('property_images'));
+router.get('/room-images/:imageId', sendImage('room_images'));
 
 router.get('/:id', async (req, res, next) => {
   try {
@@ -193,6 +198,20 @@ router.get('/:id', async (req, res, next) => {
       ? imageRows.map((row) => hotelImageUrl(row.image_id))
       : [hotel.image_url].filter(Boolean);
 
+    // รูปประเภทห้องทุกห้องของโรงแรมนี้ในคำสั่งเดียว (ไม่ยิงทีละห้อง) แล้วจัดกลุ่มตามห้อง เรียงตามลำดับ
+    const { rows: roomImageRows } = await pool.query(
+      `SELECT ri.room_id, ri.image_id
+         FROM room_images ri JOIN rooms r ON r.room_id = ri.room_id
+        WHERE r.property_id = $1
+        ORDER BY ri.room_id, ri.position`,
+      [hotelId]
+    );
+    const roomImages = new Map();
+    for (const row of roomImageRows) {
+      if (!roomImages.has(row.room_id)) roomImages.set(row.room_id, []);
+      roomImages.get(row.room_id).push(roomImageUrl(row.image_id));
+    }
+
     res.json({
       ...serializeHotel(hotel),
       imageUrl: images[0] ?? null,
@@ -205,26 +224,31 @@ router.get('/:id', async (req, res, next) => {
       nights: stay.nights,
       guests,
       roomCount: rooms,
-      rooms: roomsResult.rows.map((room) => ({
-        id: room.room_id,
-        name: room.room_type_name,
-        description: room.description,
-        maxGuests: room.max_guests,
-        totalRooms: room.total_rooms,
-        basePrice: room.base_price,
-        imageUrl: room.image_url,
-        bedType: room.bed_type,
-        sizeSqm: room.size_sqm,
-        breakfastIncluded: room.breakfast_included,
-        // พักได้ไหม: rooms ห้อง × ห้องละ max_guests คน ต้องพอ และต้องมีคนพักทุกห้อง
-        fitsGuests: guests <= room.max_guests * rooms && rooms <= guests,
-        // ว่างพอไหม (ไม่ระบุวัน = ยังบอกไม่ได้ ถือว่าพอ)
-        enoughRooms: !stay.nights || room.available >= rooms,
-        // ระบุวันมา → จำนวนห้องว่างจริงของช่วงนั้น / ไม่ระบุวัน → null (ยังบอกไม่ได้)
-        available: stay.nights ? room.available : null,
-        stayPrice: stay.nights ? room.stay_price : null,
-        nightlyPrice: stay.nights ? Math.round(room.stay_price / room.nights) : room.base_price,
-      })),
+      rooms: roomsResult.rows.map((room) => {
+        // รูปห้องที่อัปโหลด (ตัวแรก = รูปหลัก) · ยังไม่มีรูปอัปโหลด → ใช้ลิงก์รูปเดิม 1 รูป
+        const photos = roomImages.get(room.room_id) ?? [room.image_url].filter(Boolean);
+        return {
+          id: room.room_id,
+          name: room.room_type_name,
+          description: room.description,
+          maxGuests: room.max_guests,
+          totalRooms: room.total_rooms,
+          basePrice: room.base_price,
+          imageUrl: photos[0] ?? null,
+          images: photos,
+          bedType: room.bed_type,
+          sizeSqm: room.size_sqm,
+          breakfastIncluded: room.breakfast_included,
+          // พักได้ไหม: rooms ห้อง × ห้องละ max_guests คน ต้องพอ และต้องมีคนพักทุกห้อง
+          fitsGuests: guests <= room.max_guests * rooms && rooms <= guests,
+          // ว่างพอไหม (ไม่ระบุวัน = ยังบอกไม่ได้ ถือว่าพอ)
+          enoughRooms: !stay.nights || room.available >= rooms,
+          // ระบุวันมา → จำนวนห้องว่างจริงของช่วงนั้น / ไม่ระบุวัน → null (ยังบอกไม่ได้)
+          available: stay.nights ? room.available : null,
+          stayPrice: stay.nights ? room.stay_price : null,
+          nightlyPrice: stay.nights ? Math.round(room.stay_price / room.nights) : room.base_price,
+        };
+      }),
     });
   } catch (error) {
     next(error);

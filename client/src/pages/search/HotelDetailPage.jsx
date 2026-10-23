@@ -120,8 +120,11 @@ function StayPicker({ checkIn, checkOut, adults, children, rooms, onApply, cheap
 // ---------------------------------------------------------------------------
 // การ์ดประเภทห้อง
 // ---------------------------------------------------------------------------
-function RoomCard({ room, nights, guests, rooms, onBook, onPickDates }) {
+// onViewPhotos(index) = เปิดดูรูปห้องเต็มจอ — ตัวดูรูปอยู่ระดับหน้า (ไม่อยู่ในการ์ดที่เป็น @container
+// เพราะ container query ทำให้ position: fixed อิงกรอบการ์ดแทนทั้งจอได้)
+function RoomCard({ room, nights, guests, rooms, onBook, onPickDates, onViewPhotos }) {
   const { tx, formatPrice } = useLanguage();
+  const photos = room.images ?? [];
   const hasDates = nights > 0;
   const soldOut = hasDates && room.available === 0;
   const notEnough = hasDates && !soldOut && !room.enoughRooms; // ว่างอยู่ แต่น้อยกว่าจำนวนห้องที่ต้องการ
@@ -139,7 +142,24 @@ function RoomCard({ room, nights, guests, rooms, onBook, onPickDates }) {
   return (
     <div className="@container">
     <article className={`flex flex-col overflow-hidden rounded-3xl border bg-white transition @2xl:flex-row ${soldOut ? 'border-slate-200 opacity-75' : 'border-slate-200 hover:border-brand-200 hover:shadow-lg hover:shadow-slate-900/5'}`}>
-      <SmartImage src={room.imageUrl} alt={room.name} width={560} className="h-48 @2xl:h-auto @2xl:w-60 @2xl:shrink-0" />
+      {/* รูปห้อง: กดดูเต็มจอได้ทุกรูป (รูปที่เจ้าของอัปโหลด สูงสุด 5 รูป) · มีหลายรูปขึ้นป้ายจำนวนรูป */}
+      {photos.length ? (
+        <button
+          type="button"
+          onClick={() => onViewPhotos(0)}
+          aria-label={tx(`ดูรูป ${room.name} (${photos.length} รูป)`, `View ${room.name} photos (${photos.length})`)}
+          className="relative h-48 overflow-hidden @2xl:h-auto @2xl:w-60 @2xl:shrink-0"
+        >
+          <SmartImage src={room.imageUrl} alt={room.name} width={560} className="h-full w-full" imgClassName="transition duration-700 hover:scale-105" />
+          {photos.length > 1 && (
+            <span className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-full bg-slate-900/70 px-2 py-0.5 text-xs font-bold text-white">
+              <Icon name="image" className="h-3.5 w-3.5" />{photos.length}
+            </span>
+          )}
+        </button>
+      ) : (
+        <SmartImage src={room.imageUrl} alt={room.name} width={560} className="h-48 @2xl:h-auto @2xl:w-60 @2xl:shrink-0" />
+      )}
       <div className="flex flex-1 flex-col gap-4 p-5 @lg:flex-row">
         <div className="min-w-0 flex-1 space-y-3">
           <div>
@@ -340,7 +360,9 @@ export default function HotelDetailPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [pickSignal, setPickSignal] = useState(0);
-  const [viewer, setViewer] = useState(null); // ลำดับรูปที่เปิดดูเต็มจอ (null = ปิด)
+  // ดูรูปเต็มจอ (รูปโรงแรม หรือรูปของห้องที่กด): null = ปิด · { photos, index, alt }
+  const [viewer, setViewer] = useState(null);
+  const openViewer = (photos, index, alt) => setViewer({ photos, index, alt });
 
   // รองรับทั้ง checkIn/checkOut และ checkin/checkout (ลิงก์เก่า) + guests แบบรวม
   const checkIn = [params.get('checkIn'), params.get('checkin')].find(isISODate) || '';
@@ -450,7 +472,7 @@ export default function HotelDetailPage() {
             <button
               key={src}
               type="button"
-              onClick={() => setViewer(index)}
+              onClick={() => openViewer(gallery, index, hotel.name)}
               aria-label={tx(`ดูรูปที่ ${index + 1} เต็มจอ`, `View photo ${index + 1}`)}
               className={`${galleryTile(index, gallery.length)} overflow-hidden`}
             >
@@ -468,15 +490,21 @@ export default function HotelDetailPage() {
         {gallery.length > 1 && (
           <button
             type="button"
-            onClick={() => setViewer(0)}
+            onClick={() => openViewer(gallery, 0, hotel.name)}
             className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-xl bg-white/95 px-3 py-2 text-sm font-bold text-slate-800 shadow-lg backdrop-blur transition hover:bg-white"
           >
             <Icon name="grid" className="h-4 w-4" />{tx(`ดูรูปทั้งหมด ${gallery.length} รูป`, `Show all ${gallery.length} photos`)}
           </button>
         )}
       </div>
-      {viewer !== null && (
-        <PhotoLightbox photos={gallery} index={viewer} onIndex={setViewer} onClose={() => setViewer(null)} alt={hotel.name} />
+      {viewer && (
+        <PhotoLightbox
+          photos={viewer.photos}
+          index={viewer.index}
+          onIndex={(index) => setViewer({ ...viewer, index })}
+          onClose={() => setViewer(null)}
+          alt={viewer.alt}
+        />
       )}
 
       {/* มือถือ: กล่องเลือกวันขึ้นก่อนเนื้อหา · จอใหญ่: อยู่คอลัมน์ขวาแบบ sticky */}
@@ -512,7 +540,16 @@ export default function HotelDetailPage() {
             </div>
             <div className={`mt-4 space-y-4 transition ${refreshing ? 'pointer-events-none opacity-60' : ''}`}>
               {hotel.rooms.map((room) => (
-                <RoomCard key={room.id} room={room} nights={nights} guests={guests} rooms={rooms} onBook={book} onPickDates={pickDates} />
+                <RoomCard
+                  key={room.id}
+                  room={room}
+                  nights={nights}
+                  guests={guests}
+                  rooms={rooms}
+                  onBook={book}
+                  onPickDates={pickDates}
+                  onViewPhotos={(index) => openViewer(room.images, index, room.name)}
+                />
               ))}
             </div>
           </section>

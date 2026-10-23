@@ -29,7 +29,7 @@ npm run dev
 
 - เช็ก API: http://localhost:3000/api/health
 - SQL ใน `db/` จะทำงานอัตโนมัติเมื่อสร้าง PostgreSQL volume ใหม่เท่านั้น หากมีฐานข้อมูลเดิมต้องสำรองข้อมูลก่อน แล้วจึงใช้ขั้นตอน migration/recreate ที่ทีมตกลงกัน
-- `db/03-booking.sql` (ส่วนเพิ่มของระบบจอง), `db/04-demo-data.sql` (ข้อมูลตัวอย่าง), `db/05-admin.sql` (หลังบ้าน), `db/06-payment-gateway.sql` (ชำระเงินผ่าน Opn), `db/07-hotel-images.sql` (รูปโรงแรม) และ `db/08-hotel-approval.sql` (อนุมัติโรงแรม)
+- `db/03-booking.sql` (ส่วนเพิ่มของระบบจอง), `db/04-demo-data.sql` (ข้อมูลตัวอย่าง), `db/05-admin.sql` (หลังบ้าน), `db/06-payment-gateway.sql` (ชำระเงินผ่าน Opn), `db/07-hotel-images.sql` (รูปโรงแรม), `db/08-hotel-approval.sql` (อนุมัติโรงแรม) และ `db/09-room-images.sql` (รูปห้อง)
   รันซ้ำได้โดยไม่ลบข้อมูลเดิม ถ้ามีฐานข้อมูลอยู่แล้วให้สั่งเพิ่มแค่ไฟล์เหล่านี้ (ตามลำดับ):
   ```bash
   docker compose exec -T postgres psql -U agoda_admin -d agoda_db -f /docker-entrypoint-initdb.d/03-booking.sql
@@ -38,6 +38,7 @@ npm run dev
   docker compose exec -T postgres psql -U agoda_admin -d agoda_db -f /docker-entrypoint-initdb.d/06-payment-gateway.sql
   docker compose exec -T postgres psql -U agoda_admin -d agoda_db -f /docker-entrypoint-initdb.d/07-hotel-images.sql
   docker compose exec -T postgres psql -U agoda_admin -d agoda_db -f /docker-entrypoint-initdb.d/08-hotel-approval.sql
+  docker compose exec -T postgres psql -U agoda_admin -d agoda_db -f /docker-entrypoint-initdb.d/09-room-images.sql
   ```
 - ถ้าเครื่องมี PostgreSQL ตัวอื่นใช้พอร์ต 5432 อยู่แล้ว ให้สร้าง `docker-compose.override.yml` (ไม่ต้อง commit) เปลี่ยนพอร์ต เช่น
   `ports: !override ["5434:5432"]` ใต้ `services.postgres` แล้วแก้ `DATABASE_URL` ใน `server/.env` เป็นพอร์ตเดียวกัน
@@ -50,7 +51,7 @@ npm run dev
   node server/test/payment-methods.js      # วิธีชำระเงิน: บัตร / PromptPay / TrueMoney Wallet (จำลอง)
   node server/test/assistant.js            # ผู้ช่วยแนะนำที่พัก (ส่วนตีความรันได้โดยไม่เปิด server)
   node server/test/admin.js                # หลังบ้าน: สิทธิ์, ห้อง/ปฏิทินราคา, ยกเลิก+คืนเงิน, admin คนสุดท้าย
-  node server/test/hotel-images.js         # รูปโรงแรม: สูงสุด 5 รูป, ตรวจไฟล์ 1200×800, อัปพร้อมกัน, เรียง/ลบ
+  node server/test/hotel-images.js         # รูปโรงแรม + รูปห้อง: สูงสุด 5 รูป, ตรวจไฟล์ 1200×800, อัปพร้อมกัน, เรียง/ลบ
   node server/test/hotel-approval.js       # อนุมัติโรงแรม + คำหยาบ/คำทับศัพท์ในชื่อโรงแรม
   ```
 
@@ -139,6 +140,6 @@ docker compose -f docker-compose.prod.yml --env-file .env.production up -d --bui
 - API ตอบ error เป็น `{ "message": "..." }` เสมอ
 - วันที่ส่งเป็น `YYYY-MM-DD`, ราคาเป็นบาท, ราคาคำนวณที่ server เสมอ
 - API ที่ต้องล็อกอินใส่ `requireAuth` (JWT ใน cookie, ดู `middleware/auth.js`) แล้วใช้ `req.user.id` กรองข้อมูลของผู้ใช้เสมอ
-- แก้ `db/*.sql` เมื่อไหร่ ต้องแจ้งอีกคน — `03-booking.sql`, `04-demo-data.sql`, `05-admin.sql`, `06-payment-gateway.sql`, `07-hotel-images.sql`, `08-hotel-approval.sql` รันซ้ำด้วย `psql -f` ได้เลยไม่เสียข้อมูล
+- แก้ `db/*.sql` เมื่อไหร่ ต้องแจ้งอีกคน — `03-booking.sql`, `04-demo-data.sql`, `05-admin.sql`, `06-payment-gateway.sql`, `07-hotel-images.sql`, `08-hotel-approval.sql`, `09-room-images.sql` รันซ้ำด้วย `psql -f` ได้เลยไม่เสียข้อมูล
   (ดูด้านบน) ส่วน `01`/`02` ต้องสร้างฐานข้อมูลใหม่ด้วย `docker compose down -v && docker compose up -d` (ข้อมูลเดิมหายหมด)
 - หา `TODO(...)` ในโค้ดเพื่อดูว่าต้องทำอะไรต่อ

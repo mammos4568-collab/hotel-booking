@@ -10,7 +10,7 @@ import { rateLimit } from '../../lib/rateLimit.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
 import auditRouter from './audit.js';
 import bookingsRouter from './bookings.js';
-import hotelImagesRouter from './hotelImages.js';
+import hotelImagesRouter, { roomImagesRouter } from './hotelImages.js';
 import hotelsRouter from './hotels.js';
 import reviewsRouter from './reviews.js';
 import roomsRouter, { hotelRoomsRouter } from './rooms.js';
@@ -28,6 +28,7 @@ router.use('/stats', statsRouter);
 router.use('/hotels/:id/rooms', hotelRoomsRouter); // เพิ่มประเภทห้องให้โรงแรม (ต้องมาก่อน /hotels)
 router.use('/hotels/:id/images', hotelImagesRouter); // รูปโรงแรม สูงสุด 5 รูป (ต้องมาก่อน /hotels)
 router.use('/hotels', hotelsRouter);
+router.use('/rooms/:id/images', roomImagesRouter); // รูปประเภทห้อง สูงสุด 5 รูป (ต้องมาก่อน /rooms)
 router.use('/rooms', roomsRouter);                 // แก้/ลบประเภทห้อง + ปฏิทินราคา/ห้องรายวัน
 router.use('/bookings', bookingsRouter);
 router.use('/reviews', reviewsRouter);

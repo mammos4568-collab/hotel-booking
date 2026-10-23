@@ -1,8 +1,10 @@
-// หลังบ้าน: รูปโรงแรม สูงสุด 5 รูป — เลือกรูปจากเครื่อง (หรือลากมาวาง) → เบราว์เซอร์ครอปเป็น 3:2 แล้วย่อเป็น 1200×800
-// (lib/imageResize.js) · รูปแรก = รูปปกที่ลูกค้าเห็นในหน้าค้นหา · เลื่อนซ้าย/ขวาเพื่อเรียงลำดับ · ลบรูป
-//   HotelPhotos      หน้าแก้ไขโรงแรม — อัป/เรียง/ลบที่ server ทันที
-//   HotelPhotoDraft  หน้าเพิ่มโรงแรม — โรงแรมยังไม่มีรหัสจนกว่าจะบันทึก (อัปไปผูกกับโรงแรมยังไม่ได้)
-//                    จึงเก็บรูปที่ย่อแล้วไว้ในเบราว์เซอร์ก่อน แล้วอัปด้วย uploadDraftPhotos() หลังสร้างโรงแรมเสร็จ
+// หลังบ้าน: รูปที่เจ้าของอัปโหลด สูงสุด 5 รูป — ใช้ชุดเดียวกันทั้งรูปโรงแรมและรูปประเภทห้อง
+//   เลือกรูปจากเครื่อง (หรือลากมาวาง) → เบราว์เซอร์ครอปเป็น 3:2 แล้วย่อเป็น 1200×800 (lib/imageResize.js)
+//   รูปแรก = รูปปก (หน้าค้นหา / การ์ดห้อง) · เลื่อนซ้าย/ขวาเพื่อเรียงลำดับ · ลบรูป
+//   PhotoManager  ของที่บันทึกแล้ว (หน้าแก้ไขโรงแรม, หน้าต่างแก้ไขห้อง) — อัป/เรียง/ลบที่ server ทันที
+//                 HotelPhotos = PhotoManager ของรูปโรงแรม
+//   PhotoDraft    ของที่ยังไม่ได้บันทึก (หน้าเพิ่มโรงแรม, หน้าต่างเพิ่มห้อง) — ยังไม่มีรหัสให้ผูกรูป
+//                 จึงเก็บรูปที่ย่อแล้วไว้ในเบราว์เซอร์ก่อน แล้วอัปด้วย uploadDraftPhotos() หลังบันทึกเสร็จ
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api.js';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
@@ -11,7 +13,7 @@ import { useLanguage } from '../../context/LanguageContext.jsx';
 import { resizeErrorText, resizeHotelImage } from '../../lib/imageResize.js';
 import { Notice, buttonPrimary, card } from './adminUi.jsx';
 
-const MAX_IMAGES = 5; // ตรงกับ MAX_HOTEL_IMAGES ใน server/src/lib/hotelImages.js
+const MAX_IMAGES = 5; // ตรงกับ MAX_HOTEL_IMAGES / MAX_ROOM_IMAGES ใน server/src/lib/hotelImages.js
 const ACCEPT = 'image/jpeg,image/png,image/webp';
 const iconButton =
   'inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent';
@@ -128,8 +130,10 @@ function PhotoGrid({ photos, disabled, onPick, onDropFiles, onMove, onMakeCover,
   );
 }
 
-// ---------- หน้าแก้ไขโรงแรม: ทำที่ server ทันที ----------
-export default function HotelPhotos({ hotelId }) {
+// ---------- ของที่บันทึกแล้ว: ทำที่ server ทันที ----------
+// endpoint = /admin/hotels/:id/images หรือ /admin/rooms/:id/images · compact = หัวข้อเล็ก (ใช้ในหน้าต่างแก้ไขห้อง)
+// onChange = เรียกหลังอัป/เรียง/ลบสำเร็จ (หน้าที่เปิดอยู่จะได้โหลดรูปปกใหม่)
+export function PhotoManager({ endpoint, title, description, compact = false, onChange }) {
   const { tx } = useLanguage();
   const [images, setImages] = useState(null); // null = กำลังโหลด
   const [busy, setBusy] = useState(''); // ข้อความระหว่างทำงาน เช่น "กำลังอัปโหลด 2/3"
@@ -139,13 +143,19 @@ export default function HotelPhotos({ hotelId }) {
   const fileInput = useRef(null);
 
   useEffect(() => {
-    api(`/admin/hotels/${hotelId}/images`)
+    api(endpoint)
       .then((data) => setImages(data.images))
       .catch((err) => {
         setImages([]);
         setMessage({ tone: 'error', text: err.message });
       });
-  }, [hotelId]);
+  }, [endpoint]);
+
+  // ได้รายการรูปใหม่จาก server หลังแก้สำเร็จ → แสดงผล + บอกหน้าที่เปิดอยู่
+  const applyImages = (list) => {
+    setImages(list);
+    onChange?.(list);
+  };
 
   const slotsLeft = images ? MAX_IMAGES - images.length : 0;
   const pickFiles = () => fileInput.current?.click();
@@ -161,8 +171,8 @@ export default function HotelPhotos({ hotelId }) {
       setBusy(tx(`กำลังย่อและอัปโหลดรูป ${i + 1}/${chosen.length}…`, `Resizing and uploading ${i + 1}/${chosen.length}…`));
       try {
         const blob = await resizeHotelImage(chosen[i]);
-        const result = await api(`/admin/hotels/${hotelId}/images`, { method: 'POST', body: blob });
-        setImages(result.images);
+        const result = await api(endpoint, { method: 'POST', body: blob });
+        applyImages(result.images);
         uploaded += 1;
       } catch (err) {
         failures.push(`${chosen[i].name} — ${resizeErrorText(err, tx)}`);
@@ -177,8 +187,8 @@ export default function HotelPhotos({ hotelId }) {
     setBusy(tx('กำลังบันทึกลำดับ…', 'Saving order…'));
     setMessage(null);
     try {
-      const result = await api(`/admin/hotels/${hotelId}/images/order`, { method: 'PUT', body: { imageIds: order } });
-      setImages(result.images);
+      const result = await api(`${endpoint}/order`, { method: 'PUT', body: { imageIds: order } });
+      applyImages(result.images);
     } catch (err) {
       setMessage({ tone: 'error', text: err.message });
     } finally {
@@ -192,8 +202,8 @@ export default function HotelPhotos({ hotelId }) {
   const runDelete = async () => {
     setDeleteState({ loading: true, error: '' });
     try {
-      const result = await api(`/admin/hotels/${hotelId}/images/${toDelete.id}`, { method: 'DELETE' });
-      setImages(result.images);
+      const result = await api(`${endpoint}/${toDelete.id}`, { method: 'DELETE' });
+      applyImages(result.images);
       setToDelete(null);
       setDeleteState({ loading: false, error: '' });
       setMessage({ tone: 'success', text: tx('ลบรูปแล้ว', 'Photo deleted') });
@@ -202,27 +212,33 @@ export default function HotelPhotos({ hotelId }) {
     }
   };
 
+  const count = <span className="font-semibold text-slate-400">{images?.length ?? 0}/{MAX_IMAGES}</span>;
   return (
-    <section className="mt-8">
-      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-extrabold text-slate-900">
-            {tx('รูปโรงแรม', 'Photos')} <span className="text-sm font-semibold text-slate-400">{images?.length ?? 0}/{MAX_IMAGES}</span>
-          </h2>
-          <p className="text-sm text-slate-500">
-            {tx('รูปแรกคือรูปปกในหน้าค้นหา (กด ★ เพื่อตั้งเป็นรูปปก) · ระบบครอปทุกรูปเป็นสัดส่วน 3:2 และย่อเป็น 1200×800 ให้เท่ากันอัตโนมัติ', 'The first photo is the cover in search results (press ★ to make a photo the cover) · every photo is cropped to 3:2 and resized to 1200×800 automatically')}
-          </p>
+    <section className={compact ? '' : 'mt-8'}>
+      {compact ? (
+        <>
+          <p className="text-xs font-bold text-slate-600">{title} {count}</p>
+          {description && <p className="mt-0.5 text-xs text-slate-400">{description}</p>}
+        </>
+      ) : (
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-extrabold text-slate-900">{title} <span className="text-sm">{count}</span></h2>
+            {description && <p className="text-sm text-slate-500">{description}</p>}
+          </div>
+          <button type="button" onClick={pickFiles} disabled={!images || slotsLeft <= 0 || Boolean(busy)} className={buttonPrimary}>
+            <Icon name="plus" className="h-4 w-4" />{tx('เพิ่มรูป', 'Add photos')}
+          </button>
         </div>
-        <button type="button" onClick={pickFiles} disabled={!images || slotsLeft <= 0 || Boolean(busy)} className={buttonPrimary}>
-          <Icon name="plus" className="h-4 w-4" />{tx('เพิ่มรูป', 'Add photos')}
-        </button>
-        <input ref={fileInput} type="file" accept={ACCEPT} multiple hidden onChange={(event) => upload(takeFiles(event))} />
-      </div>
+      )}
+      <input ref={fileInput} type="file" accept={ACCEPT} multiple hidden onChange={(event) => upload(takeFiles(event))} />
 
-      <div className="space-y-2">
-        {busy && <Notice tone="info">{busy}</Notice>}
-        {message && <Notice tone={message.tone}>{message.text}</Notice>}
-      </div>
+      {(busy || message) && (
+        <div className="mt-2 space-y-2">
+          {busy && <Notice tone="info">{busy}</Notice>}
+          {message && <Notice tone={message.tone}>{message.text}</Notice>}
+        </div>
+      )}
 
       {images === null ? (
         <div className={gridClass}>
@@ -244,7 +260,7 @@ export default function HotelPhotos({ hotelId }) {
       <ConfirmDialog
         open={Boolean(toDelete)}
         title={tx('ลบรูปนี้?', 'Delete this photo?')}
-        message={tx('รูปจะหายจากหน้าโรงแรมทันที ถ้าเป็นรูปปก รูปถัดไปจะขึ้นเป็นรูปปกแทน', 'The photo disappears from the hotel page right away. If it is the cover, the next photo becomes the cover.')}
+        message={tx('รูปจะหายจากหน้าเว็บทันที ถ้าเป็นรูปปก รูปถัดไปจะขึ้นเป็นรูปปกแทน', 'The photo disappears from the site right away. If it is the cover, the next photo becomes the cover.')}
         confirmLabel={tx('ลบรูป', 'Delete photo')}
         loading={deleteState.loading}
         error={deleteState.error}
@@ -255,9 +271,21 @@ export default function HotelPhotos({ hotelId }) {
   );
 }
 
-// ---------- หน้าเพิ่มโรงแรม: เก็บไว้ในเบราว์เซอร์ก่อน ----------
-// photos = [{ id, url, blob }] (state อยู่ที่หน้าเพิ่มโรงแรม) · blob = รูปที่ย่อแล้ว รออัป · url = ไว้แสดงตัวอย่าง
-// onChange รับฟังก์ชันแบบ setState(fn) · onBusyChange แจ้งว่ากำลังย่อรูปอยู่ (หน้าเพิ่มโรงแรมรอให้เสร็จก่อนบันทึก)
+// รูปโรงแรม (หน้าแก้ไขโรงแรม)
+export default function HotelPhotos({ hotelId }) {
+  const { tx } = useLanguage();
+  return (
+    <PhotoManager
+      endpoint={`/admin/hotels/${hotelId}/images`}
+      title={tx('รูปโรงแรม', 'Photos')}
+      description={tx('รูปแรกคือรูปปกในหน้าค้นหา (กด ★ เพื่อตั้งเป็นรูปปก) · ระบบครอปทุกรูปเป็นสัดส่วน 3:2 และย่อเป็น 1200×800 ให้เท่ากันอัตโนมัติ', 'The first photo is the cover in search results (press ★ to make a photo the cover) · every photo is cropped to 3:2 and resized to 1200×800 automatically')}
+    />
+  );
+}
+
+// ---------- ของที่ยังไม่ได้บันทึก: เก็บไว้ในเบราว์เซอร์ก่อน ----------
+// photos = [{ id, url, blob }] (state อยู่ที่หน้าที่ใช้) · blob = รูปที่ย่อแล้ว รออัป · url = ไว้แสดงตัวอย่าง
+// onChange รับฟังก์ชันแบบ setState(fn) · onBusyChange แจ้งว่ากำลังย่อรูปอยู่ (หน้าที่ใช้รอให้เสร็จก่อนบันทึก)
 let nextDraftId = 1;
 
 // อ่านรูปเป็น data URL ("data:image/jpeg;base64,…") ใส่ <img src> ได้เลย
@@ -271,7 +299,7 @@ function readAsDataUrl(blob) {
   });
 }
 
-export function HotelPhotoDraft({ photos, onChange, onBusyChange, disabled }) {
+export function PhotoDraft({ photos, onChange, onBusyChange, disabled, title, hint }) {
   const { tx } = useLanguage();
   const [busy, setBusy] = useState('');
   const [message, setMessage] = useState(null);
@@ -307,11 +335,9 @@ export function HotelPhotoDraft({ photos, onChange, onBusyChange, disabled }) {
   return (
     <div>
       <p className="text-xs font-bold text-slate-600">
-        {tx('รูปโรงแรม', 'Photos')} <span className="font-semibold text-slate-400">{photos.length}/{MAX_IMAGES}</span>
+        {title} <span className="font-semibold text-slate-400">{photos.length}/{MAX_IMAGES}</span>
       </p>
-      <p className="mt-0.5 text-xs text-slate-400">
-        {tx('รูปแรกคือรูปปกในหน้าค้นหา (กด ★ เพื่อตั้งเป็นรูปปก) · ระบบครอปเป็น 3:2 และย่อเป็น 1200×800 ให้อัตโนมัติ · รูปจะอัปโหลดตอนกด "เพิ่มโรงแรม"', 'The first photo is the cover in search results (press ★ to change it) · photos are cropped to 3:2 and resized to 1200×800 automatically · they upload when you press "Create hotel"')}
-      </p>
+      {hint && <p className="mt-0.5 text-xs text-slate-400">{hint}</p>}
       {(busy || message) && (
         <div className="mt-2 space-y-2">
           {busy && <Notice tone="info">{busy}</Notice>}
@@ -333,15 +359,15 @@ export function HotelPhotoDraft({ photos, onChange, onBusyChange, disabled }) {
   );
 }
 
-// หลังสร้างโรงแรมเสร็จ (ได้รหัสโรงแรมแล้ว): อัปรูปที่เลือกไว้ "ทีละรูป" ตามลำดับ
-//   ไม่ยิงพร้อมกัน: server ต่อรูปใหม่ไว้ท้ายสุดเสมอ (ล็อกแถวโรงแรมแล้วนับ) → ยิงพร้อมกันได้ลำดับตามคำขอที่ถึงก่อน รูปปกอาจสลับ
-//   รูปไหนพังก็อัปรูปที่เหลือต่อ แล้วสรุปให้ผู้ใช้ (เพิ่มรูปที่พังใหม่ได้ในหน้าแก้ไข)
-export async function uploadDraftPhotos(hotelId, photos, onProgress) {
+// หลังบันทึกเสร็จ (ได้รหัสโรงแรม/ห้องแล้ว): อัปรูปที่เลือกไว้ "ทีละรูป" ตามลำดับ ไปที่ endpoint ของรูป
+//   ไม่ยิงพร้อมกัน: server ต่อรูปใหม่ไว้ท้ายสุดเสมอ (ล็อกแถวแม่แล้วนับ) → ยิงพร้อมกันได้ลำดับตามคำขอที่ถึงก่อน รูปปกอาจสลับ
+//   รูปไหนพังก็อัปรูปที่เหลือต่อ แล้วสรุปให้ผู้ใช้ (เพิ่มรูปที่พังใหม่ได้ตอนแก้ไข)
+export async function uploadDraftPhotos(endpoint, photos, onProgress) {
   const result = { uploaded: 0, failed: 0, error: '' };
   for (let i = 0; i < photos.length; i += 1) {
     onProgress(i + 1, photos.length);
     try {
-      await api(`/admin/hotels/${hotelId}/images`, { method: 'POST', body: photos[i].blob });
+      await api(endpoint, { method: 'POST', body: photos[i].blob });
       result.uploaded += 1;
     } catch (err) {
       result.failed += 1;

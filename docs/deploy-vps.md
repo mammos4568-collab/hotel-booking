@@ -147,9 +147,10 @@ GitHub → Settings → Developer settings → OAuth Apps → New OAuth App
 git pull
 dc up -d --build
 
-# ไฟล์ db ที่รันซ้ำได้ (03–08) — ฐานข้อมูลเดิมไม่รันให้เองอีก ต้องสั่งเมื่อมีไฟล์ใหม่/แก้ เช่น
+# ไฟล์ db ที่รันซ้ำได้ (03–09) — ฐานข้อมูลเดิมไม่รันให้เองอีก ต้องสั่งเมื่อมีไฟล์ใหม่/แก้ เช่น
 dc exec -T db psql -U agoda_admin -d agoda_db -f /docker-entrypoint-initdb.d/07-hotel-images.sql
 dc exec -T db psql -U agoda_admin -d agoda_db -f /docker-entrypoint-initdb.d/08-hotel-approval.sql
+dc exec -T db psql -U agoda_admin -d agoda_db -f /docker-entrypoint-initdb.d/09-room-images.sql
 
 # สำรองข้อมูล — ไฟล์มีข้อมูลส่วนบุคคล เก็บไว้นอกโฟลเดอร์โปรเจกต์ (กันเผลอ commit) และห้ามแชร์
 dc exec -T db pg_dump -U agoda_admin agoda_db > ~/backup-$(date +%F).sql

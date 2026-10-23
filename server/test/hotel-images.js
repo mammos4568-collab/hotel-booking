@@ -8,7 +8,9 @@
 //   - สูงสุด 5 รูป: รูปที่ 6 → 409 · ยิงอัปพร้อมกัน 7 รูป ก็ได้แค่ 5 รูป ลำดับ 1–5 ไม่ซ้ำ (ล็อกแถวโรงแรม)
 //   - เรียงลำดับใหม่ (ต้องครบทุกรูป ห้ามมีรูปโรงแรมอื่น) · ลบรูปแล้วลำดับต่อกัน · รูปปก = ลำดับแรก
 //   - ฝั่งลูกค้า: หน้าโรงแรมได้รูปตามลำดับ · ผลค้นหาใช้รูปปก · ไฟล์รูปโหลดได้ + cache 1 ปี
-//   - ลบโรงแรม → รูปถูกลบตาม
+//   - รูปประเภทห้อง (โค้ดชุดเดียวกัน): สิทธิ์ · ตรวจไฟล์ · หน้าโรงแรม/checkout/หลังบ้านใช้รูปหลักของห้อง · สูงสุด 5 รูป
+//     · ลบประเภทห้อง → รูปห้องหายตาม
+//   - ลบโรงแรม → รูปโรงแรมและรูปห้องถูกลบตาม
 // ไฟล์ทดสอบเป็น "JPEG จำลอง" ที่มีแค่ header บอกขนาด (server อ่านขนาดจาก header ไม่ได้ถอดรหัสทั้งภาพ)
 // สคริปต์สมัครผู้ใช้ทดสอบเอง (อีเมล @example.test) แล้วลบทุกอย่างที่สร้างตอนจบ
 // ============================================================
@@ -79,7 +81,8 @@ try {
   const hotelId = created.data?.hotel?.id;
   if (!hotelId) throw new Error(`สร้างโรงแรมทดสอบไม่สำเร็จ: ${JSON.stringify(created.data)}`);
   hotelIds.push(hotelId);
-  await owner.call(`/admin/hotels/${hotelId}/rooms`, 'POST', { name: 'Photo Room', maxGuests: 2, basePrice: 1200, totalRooms: 1 });
+  const photoRoom = await owner.call(`/admin/hotels/${hotelId}/rooms`, 'POST', { name: 'Photo Room', maxGuests: 2, basePrice: 1200, totalRooms: 1 });
+  const roomId = photoRoom.data?.room?.id;
   await admin.call(`/admin/hotels/${hotelId}/approve`, 'POST'); // โรงแรมที่ owner เพิ่มต้องอนุมัติก่อน ลูกค้าถึงจะเห็น
   const imagesPath = `/admin/hotels/${hotelId}/images`;
 
@@ -153,11 +156,58 @@ try {
   ok(statuses === '201,201,201,201,201,409,409', 'ยิงอัปพร้อมกัน 7 รูป → สำเร็จ 5 · ปฏิเสธ 2 (409)', statuses);
   ok(dbImages.map((row) => row.position).join() === '1,2,3,4,5', 'ในฐานข้อมูลมี 5 รูป ลำดับ 1–5 ไม่ซ้ำ', JSON.stringify(dbImages));
 
-  console.log('\n=== 7) ลบโรงแรม → รูปหายตาม ===');
+  console.log('\n=== 7) รูปประเภทห้อง ===');
+  const roomPath = `/admin/rooms/${roomId}/images`;
+  const roomImageUrl = (id) => `/api/hotels/room-images/${id}`;
+  ok((await rival.call(roomPath, 'POST', fakeJpeg())).status === 403, 'owner คนอื่นอัปรูปห้องของเรา → 403');
+  ok((await guest.call(roomPath)).status === 403, 'ลูกค้าทั่วไปดูรายการรูปห้องในหลังบ้าน → 403');
+  ok((await owner.call(roomPath, 'POST', fakeJpeg(4000, 3000))).status === 400, 'รูปห้องขนาดไม่ใช่ 1200×800 → 400 (ตรวจแบบเดียวกับรูปโรงแรม)');
+  const roomFirst = await owner.call(roomPath, 'POST', fakeJpeg(1200, 800, 31));
+  const roomSecond = await owner.call(roomPath, 'POST', fakeJpeg(1200, 800, 32));
+  const roomIds = roomSecond.data?.images?.map((img) => img.id) ?? [];
+  ok(roomFirst.status === 201 && roomIds.length === 2 && roomSecond.data.images[1].position === 2, 'อัปรูปห้อง 2 รูป → ลำดับ 1, 2', JSON.stringify(roomSecond.data));
+
+  const roomOnPage = (await call(`/hotels/${hotelId}`)).data?.rooms?.find((room) => room.id === roomId);
+  ok(roomOnPage?.images?.join() === roomIds.map(roomImageUrl).join() && roomOnPage.imageUrl === roomImageUrl(roomIds[0]),
+    'หน้าโรงแรม: ห้องมีรูปตามลำดับ · imageUrl = รูปแรก', JSON.stringify(roomOnPage));
+  const roomFile = await fetch(`${API}/hotels/room-images/${roomIds[1]}`);
+  const roomBytes = Buffer.from(await roomFile.arrayBuffer());
+  ok(roomFile.status === 200 && roomBytes.equals(fakeJpeg(1200, 800, 32)) && /immutable/.test(roomFile.headers.get('cache-control') ?? ''),
+    'ไฟล์รูปห้องโหลดได้ ตรงกับที่อัป + cache 1 ปี', `${roomFile.status} ${roomFile.headers.get('cache-control')}`);
+
+  const bangkokDay = (offset) => {
+    const date = new Date(`${new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date())}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + offset);
+    return date.toISOString().slice(0, 10);
+  };
+  const quote = await call(`/bookings/quote?roomId=${roomId}&checkIn=${bangkokDay(30)}&checkOut=${bangkokDay(31)}&guests=1&rooms=1`);
+  ok(quote.data?.room?.imageUrl === roomImageUrl(roomIds[0]), 'หน้า checkout (quote) ใช้รูปหลักของห้อง', JSON.stringify(quote.data?.room ?? quote.data));
+  const adminRoom = (await owner.call(`/admin/hotels/${hotelId}`)).data?.hotel?.rooms?.find((room) => room.id === roomId);
+  ok(adminRoom?.coverUrl === roomImageUrl(roomIds[0]) && adminRoom.photoCount === 2, 'หลังบ้าน: รายการห้องมีรูปหลัก + จำนวนรูป', JSON.stringify(adminRoom));
+
+  const roomReorder = await owner.call(`${roomPath}/order`, 'PUT', { imageIds: [...roomIds].reverse() });
+  const roomAfterReorder = (await call(`/hotels/${hotelId}`)).data?.rooms?.find((room) => room.id === roomId);
+  ok(roomReorder.status === 200 && roomAfterReorder?.imageUrl === roomImageUrl(roomIds[1]), 'เรียงรูปห้องใหม่ → รูปหลักเปลี่ยนตาม');
+  for (let i = 3; i <= 5; i += 1) await owner.call(roomPath, 'POST', fakeJpeg(1200, 800, 30 + i));
+  const roomSixth = await owner.call(roomPath, 'POST', fakeJpeg(1200, 800, 36));
+  ok(roomSixth.status === 409 && /ประเภทห้อง.*5 รูป/.test(roomSixth.data?.message), 'รูปห้องที่ 6 → 409', roomSixth.data?.message);
+  const roomRemoved = await owner.call(`${roomPath}/${roomIds[1]}`, 'DELETE');
+  ok(roomRemoved.status === 200 && roomRemoved.data.images.map((img) => img.position).join() === '1,2,3,4', 'ลบรูปหลักของห้อง → เหลือ 4 รูป ลำดับต่อกัน');
+
+  const spare = await owner.call(`/admin/hotels/${hotelId}/rooms`, 'POST', { name: 'Spare Photo Room', maxGuests: 2, basePrice: 900, totalRooms: 1 });
+  const spareId = spare.data?.room?.id;
+  const spareImage = (await owner.call(`/admin/rooms/${spareId}/images`, 'POST', fakeJpeg(1200, 800, 40))).data?.images?.[0]?.id;
+  const spareDeleted = await owner.call(`/admin/rooms/${spareId}`, 'DELETE');
+  ok(spareDeleted.status === 200 && (await fetch(`${API}/hotels/room-images/${spareImage}`)).status === 404,
+    'ลบประเภทห้อง (ยังไม่มีการจอง) → รูปห้องหายตาม (ON DELETE CASCADE)');
+
+  console.log('\n=== 8) ลบโรงแรม → รูปหายตาม ===');
   const someImage = (await owner.call(imagesPath)).data.images[0].id;
+  const someRoomImage = (await owner.call(roomPath)).data.images[0].id;
   const deleted = await owner.call(`/admin/hotels/${hotelId}`, 'DELETE');
   ok(deleted.status === 200, 'owner ลบโรงแรมที่ยังไม่มีการจอง', JSON.stringify(deleted.data));
   ok((await fetch(`${API}/hotels/images/${someImage}`)).status === 404, 'รูปของโรงแรมที่ลบแล้วโหลดไม่ได้ (ON DELETE CASCADE)');
+  ok((await fetch(`${API}/hotels/room-images/${someRoomImage}`)).status === 404, 'รูปห้องของโรงแรมที่ลบแล้วก็หายตาม (โรงแรม → ห้อง → รูปห้อง)');
 } catch (error) {
   failed += 1;
   console.error('ERROR', error.message);

@@ -41,6 +41,12 @@ function describe(log, tx, lang) {
     case 'room.create': return { title: tx(`เพิ่มประเภทห้อง #${log.entityId}`, `Created room type #${log.entityId}`), detail: tx(`โรงแรม #${d.hotelId}`, `Hotel #${d.hotelId}`) };
     case 'room.update': return { title: tx(`แก้ประเภทห้อง #${log.entityId}`, `Edited room type #${log.entityId}`), detail: fields && tx(`ฟิลด์: ${fields}`, `Fields: ${fields}`) };
     case 'room.delete': return { title: tx(`ลบประเภทห้อง #${log.entityId}`, `Deleted room type #${log.entityId}`), detail: d.name };
+    case 'room.image_add': return {
+      title: tx(`เพิ่มรูปประเภทห้อง #${log.entityId}`, `Added a photo to room type #${log.entityId}`),
+      detail: d.position && tx(`โรงแรม #${d.hotelId} · ลำดับที่ ${d.position} · ${Math.round(d.bytes / 1024)} KB`, `Hotel #${d.hotelId} · position ${d.position} · ${Math.round(d.bytes / 1024)} KB`),
+    };
+    case 'room.image_reorder': return { title: tx(`เรียงรูปประเภทห้อง #${log.entityId} ใหม่`, `Reordered photos of room type #${log.entityId}`), detail: tx(`โรงแรม #${d.hotelId}`, `Hotel #${d.hotelId}`) };
+    case 'room.image_delete': return { title: tx(`ลบรูปประเภทห้อง #${log.entityId}`, `Deleted a photo of room type #${log.entityId}`), detail: tx(`โรงแรม #${d.hotelId}`, `Hotel #${d.hotelId}`) };
     case 'room.calendar': {
       const parts = [
         `${formatDate(d.from, lang, { day: 'numeric', month: 'short' })} – ${formatDate(d.to, lang, { day: 'numeric', month: 'short', year: 'numeric' })} (${tx(`${d.nights} คืน`, `${d.nights} nights`)})`,

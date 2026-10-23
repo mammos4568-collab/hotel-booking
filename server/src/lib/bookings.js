@@ -4,7 +4,7 @@
 // ============================================================
 import { HOLD_MINUTES } from './availability.js';
 import { todayInBangkok } from './dates.js';
-import { hotelCoverSql } from './hotelImages.js';
+import { hotelCoverSql, roomCoverSql } from './hotelImages.js';
 import { refundCharge, retrieveCharge } from './opn.js';
 
 export const BOOKING_SELECT = `
@@ -16,7 +16,7 @@ export const BOOKING_SELECT = `
          b.guest_name, b.guest_email, b.guest_phone, b.special_requests,
          b.created_at + make_interval(mins => ${HOLD_MINUTES}) AS hold_expires_at,
          p.property_id, p.name AS hotel_name, p.city, p.address, ${hotelCoverSql('p')} AS hotel_image,
-         r.room_id, r.room_type_name, r.image_url AS room_image, r.bed_type, r.max_guests,
+         r.room_id, r.room_type_name, ${roomCoverSql('r')} AS room_image, r.bed_type, r.max_guests,
          pay.method AS payment_method, pay.card_last4, pay.paid_at,
          (rv.review_id IS NOT NULL) AS has_review
     FROM bookings b

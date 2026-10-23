@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { pool } from '../../db.js';
 import { ACTIVE_BOOKING_SQL } from '../../lib/availability.js';
 import { APPROVAL_STATUSES } from '../../lib/hotelApproval.js';
-import { hotelCoverSql } from '../../lib/hotelImages.js';
+import { hotelCoverSql, roomCoverSql } from '../../lib/hotelImages.js';
 import { findSuspiciousWords } from '../../lib/moderation.js';
 import { logAction } from './audit.js';
 import { httpError, isAdmin, loadHotel, ownedBy, readId, requireAdmin, withTransaction } from './scope.js';
@@ -67,7 +67,9 @@ function serializeRoomRow(row) {
     maxGuests: row.max_guests,
     basePrice: Number(row.base_price_per_night),
     totalRooms: row.total_rooms,
-    imageUrl: row.image_url,
+    imageUrl: row.image_url, // ลิงก์รูปสำรอง (ช่องในฟอร์ม)
+    coverUrl: row.cover_url ?? null, // รูปหลักที่ลูกค้าเห็น (รูปอัปโหลดลำดับแรก หรือลิงก์รูปสำรอง)
+    photoCount: row.photo_count ?? 0,
     bedType: row.bed_type,
     sizeSqm: row.size_sqm,
     breakfastIncluded: row.breakfast_included,
@@ -159,9 +161,11 @@ router.get('/:id', async (req, res, next) => {
         ? pool.query("SELECT TRIM(first_name || ' ' || last_name) AS owner_name, email AS owner_email FROM users WHERE user_id = $1", [hotel.owner_id])
         : { rows: [{}] },
       pool.query(
-        `SELECT r.*, (SELECT COUNT(*)::int FROM bookings b
-                        WHERE b.room_id = r.room_id
-                          AND b.check_out_date > (now() AT TIME ZONE 'Asia/Bangkok')::date AND ${ACTIVE_BOOKING_SQL}) AS upcoming_bookings
+        `SELECT r.*, ${roomCoverSql('r')} AS cover_url,
+                (SELECT COUNT(*)::int FROM room_images ri WHERE ri.room_id = r.room_id) AS photo_count,
+                (SELECT COUNT(*)::int FROM bookings b
+                  WHERE b.room_id = r.room_id
+                    AND b.check_out_date > (now() AT TIME ZONE 'Asia/Bangkok')::date AND ${ACTIVE_BOOKING_SQL}) AS upcoming_bookings
            FROM rooms r WHERE r.property_id = $1 ORDER BY r.base_price_per_night, r.room_id`,
         [hotel.property_id],
       ),
