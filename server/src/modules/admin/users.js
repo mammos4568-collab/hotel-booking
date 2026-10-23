@@ -8,6 +8,11 @@ const router = Router();
 router.use(requireAdmin);
 
 const ROLES = ['user', 'owner', 'admin'];
+// หน้าเว็บเปลี่ยนได้แค่ ลูกค้า ↔ เจ้าของโรงแรม · ตั้ง/ถอดผู้ดูแลระบบได้ทางเดียวคือ server/scripts/set-role.js บนเครื่อง server
+// เหตุผล: ถ้าบัญชี admin บนเว็บหลุด (รหัสผ่าน/cookie ถูกขโมย) คนร้ายจะตั้งบัญชีตัวเองเป็น admin เพิ่ม (ประตูหลัง)
+// หรือถอด admin ตัวจริงออกไม่ได้ — ต้องมีสิทธิ์เข้าเครื่อง server (กุญแจ SSH) ด้วยถึงจะแตะสิทธิ์ admin ได้
+const WEB_ROLES = ['user', 'owner'];
+const ADMIN_BY_SCRIPT_ONLY = 'ตั้งหรือถอดผู้ดูแลระบบได้จากคำสั่งบน server เท่านั้น (server/scripts/set-role.js)';
 const PAGE_SIZE = 20;
 
 // GET /api/admin/users?q=&role=&page=
@@ -71,23 +76,23 @@ router.get('/owners', async (req, res, next) => {
   }
 });
 
-// PATCH /api/admin/users/:id/role  body: { role }
+// PATCH /api/admin/users/:id/role  body: { role: 'user' | 'owner' }
 router.patch('/:id/role', async (req, res, next) => {
   try {
     const userId = readId(req.params.id, 'รหัสผู้ใช้');
     const role = req.body?.role;
-    if (!ROLES.includes(role)) throw httpError(400, `บทบาทต้องเป็น ${ROLES.join(', ')}`);
+    if (role === 'admin') throw httpError(403, ADMIN_BY_SCRIPT_ONLY);
+    if (!WEB_ROLES.includes(role)) throw httpError(400, `บทบาทต้องเป็น ${WEB_ROLES.join(' หรือ ')}`);
     // เปลี่ยนสิทธิ์ตัวเองไม่ได้ — กันกดพลาดแล้วล็อกตัวเองออกจากหลังบ้าน
     if (userId === req.user.id) throw httpError(400, 'เปลี่ยนบทบาทของตัวเองไม่ได้');
 
     const result = await withTransaction(pool, async (client) => {
-      // 🔒 ล็อกแถวของ admin ทุกคนก่อนนับ — ถ้า admin สองคนลดสิทธิ์กันเองพร้อมกัน
-      //    คนที่สองจะรอแล้วนับใหม่ จึงไม่มีทางเหลือ admin เป็นศูนย์คน
-      const { rows: admins } = await client.query(`SELECT user_id FROM users WHERE role = 'admin' FOR UPDATE`);
+      // 🔒 ล็อกแถวผู้ใช้ก่อนดูบทบาท — ถ้ามีคนรันสคริปต์ตั้งคนนี้เป็น admin พร้อมกัน ฝั่งหนึ่งต้องรออีกฝั่ง COMMIT
+      //    จึงไม่มีทางที่หน้าเว็บจะลดสิทธิ์ admin ที่เพิ่งถูกตั้งด้วยสคริปต์ได้
       const { rows: [target] } = await client.query('SELECT user_id, role FROM users WHERE user_id = $1 FOR UPDATE', [userId]);
       if (!target) throw httpError(404, 'ไม่พบผู้ใช้นี้');
+      if (target.role === 'admin') throw httpError(403, ADMIN_BY_SCRIPT_ONLY);
       if (target.role === role) return { role, unassignedHotels: 0 };
-      if (target.role === 'admin' && admins.length <= 1) throw httpError(409, 'ต้องมีผู้ดูแลระบบอย่างน้อย 1 คน');
 
       await client.query('UPDATE users SET role = $2, updated_at = now() WHERE user_id = $1', [userId, role]);
       // ไม่ใช่เจ้าของแล้ว → ถอดออกจากโรงแรมที่เคยดูแล (โรงแรมกลับไปให้ admin ดูแล) — สิทธิ์มีผลทันทีเพราะ

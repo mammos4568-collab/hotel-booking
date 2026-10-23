@@ -96,10 +96,12 @@ dc logs caddy | grep -i "certificate obtained"   # ขอใบรับรอ�
 
 เปิด `https://myhotel.duckdns.org` — ครั้งแรกฐานข้อมูลสร้างตาราง + ข้อมูลตัวอย่างจาก `db/01–06` ให้เอง
 
-**ตั้ง admin คนแรก:** สมัครสมาชิกผ่านหน้าเว็บก่อน แล้ว
+**ตั้ง admin:** สมัครสมาชิกผ่านหน้าเว็บก่อน แล้วรันบน VM — ตั้ง/ถอด admin ได้ทางนี้ทางเดียว (หน้าเว็บตั้งได้แค่เจ้าของโรงแรม
+= คนที่ได้บัญชี admin บนเว็บไปก็สร้าง admin เพิ่มไม่ได้ ต้องมีกุญแจ SSH ของ VM ด้วย)
 
 ```bash
 dc exec app node server/scripts/set-role.js <อีเมลที่สมัคร> admin
+dc exec app node server/scripts/set-role.js <อีเมล> user      # ถอด admin (ต้องเหลือ admin อย่างน้อย 1 คน)
 ```
 
 ---

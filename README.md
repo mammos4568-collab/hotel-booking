@@ -57,7 +57,7 @@ npm run dev
 ## หลังบ้าน (เจ้าของโรงแรม / ผู้ดูแลระบบ)
 
 เปิด http://localhost:5173/admin — ต้องเป็นบัญชีที่มีบทบาท `owner` (จัดการเฉพาะโรงแรมของตัวเอง) หรือ `admin` (ทั้งระบบ)
-ตั้ง admin คนแรกด้วยสคริปต์บนเครื่อง server (สมัครสมาชิกผ่านหน้าเว็บก่อน) — คนต่อไปตั้งจากเมนู "ผู้ใช้และสิทธิ์" ได้เลย:
+ตั้ง/ถอด admin ได้จากสคริปต์บนเครื่อง server เท่านั้น (สมัครสมาชิกผ่านหน้าเว็บก่อน) — เมนู "ผู้ใช้และสิทธิ์" ตั้งได้แค่เจ้าของโรงแรม:
 
 ```bash
 node --env-file=server/.env server/scripts/set-role.js you@example.com admin
@@ -117,7 +117,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.production up -d --bui
   **ขั้นตอนเต็ม (VM, โดเมนฟรี, firewall, admin, GitHub/Opn, อัปเดต, backup): `docs/deploy-vps.md`**
 - เข้าสู่ระบบด้วย Google / GitHub บน production: ใส่ Client ID / Secret ใน `.env.production`
   แล้วลงทะเบียน callback กับแต่ละเจ้าเป็น `<PUBLIC_URL>/api/auth/<google|github>/callback` (ระบบต่อ URL ให้เอง)
-- ตั้ง admin คนแรกบน production:
+- ตั้ง/ถอด admin บน production (ทางเดียว — หน้าเว็บตั้ง admin ไม่ได้):
   `docker compose -f docker-compose.prod.yml --env-file .env.production exec app node server/scripts/set-role.js <email> admin`
 - รายละเอียด: `docs/booking.md` ข้อ 11
 

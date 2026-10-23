@@ -64,10 +64,10 @@ node server/test/protection.js           # ทดสอบ rate limit / เพ�
 node server/test/favorites.js            # รายการโปรด
 node server/test/payment-methods.js      # วิธีชำระเงิน บัตร / PromptPay / TrueMoney Wallet (จำลอง)
 node server/test/assistant.js            # ผู้ช่วยแนะนำที่พัก (~120 ข้อ · ส่วนตีความไม่ต้องเปิด server)
-node server/test/admin.js                # หลังบ้าน 73 ข้อ (อ่าน server/.env เอง เพื่อตั้ง admin + ล้างข้อมูลทดสอบ)
+node server/test/admin.js                # หลังบ้าน 76 ข้อ (อ่าน server/.env เอง เพื่อตั้ง admin + ล้างข้อมูลทดสอบ)
 node server/test/hotel-images.js         # รูปโรงแรม 30 ข้อ (สูงสุด 5 รูป, ตรวจไฟล์, อัปพร้อมกัน · อ่าน server/.env เอง)
 node server/test/hotel-approval.js       # อนุมัติโรงแรม + คำหยาบ/ทับศัพท์ 56 ข้อ (อ่าน server/.env เอง)
-node --env-file=server/.env server/scripts/set-role.js <email> admin   # ตั้ง admin คนแรก (owner: เพิ่ม --hotels=1,2)
+node --env-file=server/.env server/scripts/set-role.js <email> admin   # ตั้ง/ถอด admin ได้ทางนี้ทางเดียว (owner: เพิ่ม --hotels=1,2)
 ```
 
 - หน้าเว็บ http://localhost:5173 (vite proxy `/api` ไปที่ :3000 ให้แล้ว)
@@ -114,7 +114,8 @@ node --env-file=server/.env server/scripts/set-role.js <email> admin   # ตั�
 - หลังบ้าน `/api/admin`: ทุกเส้นผ่าน `requireRole('owner', 'admin')` · owner จำกัดเฉพาะโรงแรมตัวเองด้วย `ownedBy()` /
   `loadHotel()` / `loadRoom()` ใน `modules/admin/scope.js` · ทุกการแก้ไขเรียก `logAction()` ใน transaction เดียวกับงาน
   (ห้ามใส่ข้อมูลส่วนตัวลูกค้าใน detail) · แก้จำนวนห้อง/ปฏิทินต้องล็อกแถว `rooms` ก่อนนับการจอง (แบบเดียวกับตอนจอง)
-  · ตั้ง admin คนแรกด้วย `server/scripts/set-role.js` เท่านั้น (ไม่มี API ตั้งตัวเอง) — ดู `docs/admin.md`
+  · **ตั้ง/ถอด admin ด้วย `server/scripts/set-role.js` เท่านั้น** — API/หน้าเว็บเปลี่ยนได้แค่ลูกค้า ↔ เจ้าของโรงแรม
+  (แตะบัญชี admin = 403 · อย่าเพิ่มทางตั้ง admin ผ่านเว็บ) · กฎ "เหลือ admin ≥ 1 คน" อยู่ในสคริปต์ — ดู `docs/admin.md`
 - ชำระเงินจริงผ่าน Opn Payments (ตั้ง `OMISE_SECRET_KEY` = เปิด · ตอนนี้เฉพาะ TrueMoney): สถานะ "จ่ายแล้ว" ต้องมาจากการ
   ดึงรายการจาก Opn ด้วย secret key เท่านั้น (`retrieveCharge`) ห้ามเชื่อ query string หรือข้อมูลใน webhook ·
   อัปเดตผลผ่าน `applyGatewayCharge()` ใน transaction ที่ล็อกแถวการจองเสมอ · ยกเลิก = คืนเงินที่ Opn ก่อนแก้ DB — ดู `docs/booking.md` ข้อ 12

@@ -114,9 +114,9 @@ router.delete('/account', requireAuth, deleteLimiter, async (req, res, next) => 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    // 🔒 admin: ล็อกแถว admin ทุกคนก่อนนับ (ลำดับเดียวกับหน้าเปลี่ยนบทบาท modules/admin/users.js → ไม่เกิด deadlock)
+    // 🔒 admin: ล็อกแถว admin ทุกคนก่อนนับ เรียงตาม user_id (ลำดับเดียวกับสคริปต์ตั้งบทบาท server/scripts/set-role.js → ไม่เกิด deadlock)
     if (req.user.role === 'admin') {
-      const { rows: admins } = await client.query(`SELECT user_id FROM users WHERE role = 'admin' FOR UPDATE`);
+      const { rows: admins } = await client.query(`SELECT user_id FROM users WHERE role = 'admin' ORDER BY user_id FOR UPDATE`);
       if (admins.length <= 1 && admins[0]?.user_id === req.user.id) {
         throw httpError(409, 'คุณเป็นผู้ดูแลระบบคนสุดท้าย กรุณาตั้งผู้ดูแลระบบคนอื่นก่อนลบบัญชี');
       }

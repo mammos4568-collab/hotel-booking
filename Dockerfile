@@ -23,7 +23,7 @@ COPY client/package.json client/
 COPY server/package.json server/
 RUN npm ci --omit=dev --workspace server && npm cache clean --force
 COPY server/src server/src
-# สคริปต์ตั้งบทบาท (ตั้ง admin คนแรก) — รันด้วย docker compose exec ดู README หัวข้อหลังบ้าน
+# สคริปต์ตั้งบทบาท (ตั้ง/ถอด admin ได้ทางนี้ทางเดียว) — รันด้วย docker compose exec ดู README หัวข้อหลังบ้าน
 COPY server/scripts server/scripts
 COPY --from=build /app/client/dist client/dist
 

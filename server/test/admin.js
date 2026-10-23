@@ -4,15 +4,15 @@
 //   (อ่าน DATABASE_URL จาก server/.env เอง — ใช้ตั้ง admin คนแรกด้วยสคริปต์ และล้างข้อมูลทดสอบตอนจบ)
 //
 //   - สิทธิ์: ไม่ล็อกอิน 401 · ลูกค้า 403 · owner เห็น/แก้ได้เฉพาะโรงแรมตัวเอง · เมนู admin-only
-//   - ตั้ง admin คนแรกด้วย server/scripts/set-role.js · admin ตั้ง owner ผ่าน API (มีผลทันที)
+//   - ตั้ง admin ด้วย server/scripts/set-role.js เท่านั้น · admin ตั้ง owner ผ่าน API (มีผลทันที)
 //   - owner เพิ่มโรงแรม + ประเภทห้อง → ลูกค้าเห็นและจองได้จริง
 //   - ลดจำนวนห้อง / ปิดขาย ต่ำกว่าที่ถูกจองไว้ → 409 · ตั้งราคารายวันแล้วราคาที่ลูกค้าเห็นเปลี่ยนตาม
 //   - หลังบ้านยกเลิกการจองที่จ่ายแล้ว → คืนเงิน · สถิตินับเฉพาะโรงแรมของตัวเอง ไม่นับเงินที่คืนแล้ว
 //   - ลบรีวิวได้เฉพาะ admin · บันทึกการทำงานไม่มีข้อความรีวิว
-//   - admin สองคนลดสิทธิ์กันเองพร้อมกัน → สำเร็จคนเดียว ระบบต้องเหลือ admin
+//   - ตั้ง/ถอด admin ผ่าน API ไม่ได้ (403) · สคริปต์ถอด admin สองคนพร้อมกัน → สำเร็จคนเดียว ระบบต้องเหลือ admin
 // สคริปต์สมัครผู้ใช้ทดสอบเอง (อีเมล @example.test) แล้วลบทุกอย่างที่สร้างตอนจบ
 // ============================================================
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
@@ -227,21 +227,34 @@ try {
   const failedLog = logs.filter((log) => log.action === 'room.update' && log.entityId === roomId);
   ok(failedLog.length === 2, 'คำขอที่ถูกปฏิเสธ (409) ไม่มีบันทึก — ROLLBACK พร้อมงาน', `room.update = ${failedLog.length}`);
 
-  console.log('\n=== 11) admin สองคนลดสิทธิ์กันเองพร้อมกัน ===');
-  await admin.call(`/admin/users/${rival.id}/role`, 'PATCH', { role: 'admin' });
+  console.log('\n=== 11) ตั้ง/ถอด admin ได้จากสคริปต์บน server เท่านั้น ===');
+  // บัญชี admin บนเว็บที่หลุดไป ต้องสร้าง admin เพิ่ม (ประตูหลัง) หรือถอด admin ตัวจริงไม่ได้
+  ok((await admin.call(`/admin/users/${rival.id}/role`, 'PATCH', { role: 'admin' })).status === 403, 'ตั้ง admin ผ่าน API → 403');
+  execFileSync(process.execPath, [SET_ROLE, rival.email, 'admin'], { env: process.env, stdio: 'pipe' });
+  ok((await rival.call('/admin/users')).status === 200, 'สคริปต์ตั้ง admin คนที่สองได้ (มีผลทันที)');
+  const webDemote = await Promise.all([
+    admin.call(`/admin/users/${rival.id}/role`, 'PATCH', { role: 'user' }),
+    rival.call(`/admin/users/${admin.id}/role`, 'PATCH', { role: 'owner' }),
+  ]);
+  const { rows: [{ stillAdmin }] } = await db.query(
+    `SELECT COUNT(*)::int AS "stillAdmin" FROM users WHERE role = 'admin' AND user_id = ANY($1::int[])`, [[admin.id, rival.id]],
+  );
+  ok(webDemote.every((r) => r.status === 403) && stillAdmin === 2, 'ถอด admin ผ่าน API → 403 ทั้งคู่ (ยังเป็น admin ทั้งสองคน)',
+    `${webDemote.map((r) => r.status).join(',')} · admin ${stillAdmin}`);
+
+  // สคริปต์ถอด admin สองคนพร้อมกัน (2 process): ล็อกแถว admin ก่อนนับ → คนที่สองรอ แล้วนับใหม่
   const { rows: [{ others }] } = await db.query(
     `SELECT COUNT(*)::int AS others FROM users WHERE role = 'admin' AND user_id <> ALL($1::int[])`, [[admin.id, rival.id]],
   );
-  const race = await Promise.all([
-    admin.call(`/admin/users/${rival.id}/role`, 'PATCH', { role: 'user' }),
-    rival.call(`/admin/users/${admin.id}/role`, 'PATCH', { role: 'user' }),
-  ]);
-  const statuses = race.map((r) => r.status);
+  const demoteByScript = (email) => new Promise((resolve) => {
+    execFile(process.execPath, [SET_ROLE, email, 'user'], { env: process.env }, (error, stdout, stderr) => resolve({ ok: !error, out: `${stdout}${stderr}` }));
+  });
+  const race = await Promise.all([demoteByScript(admin.email), demoteByScript(rival.email)]);
   const { rows: [{ admins }] } = await db.query(`SELECT COUNT(*)::int AS admins FROM users WHERE role = 'admin'`);
   if (others === 0) {
     // ไม่มี admin อื่นในระบบ → ถ้าไม่ล็อก ทั้งคู่จะเห็นว่า "มี admin 2 คน" แล้วลดสิทธิ์สำเร็จทั้งคู่ = ไม่เหลือ admin เลย
-    ok(statuses.filter((s) => s === 200).length === 1 && statuses.some((s) => s === 409 || s === 403) && admins === 1,
-      'สำเร็จคนเดียว อีกคนถูกปฏิเสธ → ยังเหลือ admin 1 คน', `${statuses.join(',')} · admin เหลือ ${admins}`);
+    ok(race.filter((r) => r.ok).length === 1 && race.some((r) => r.out.includes('อย่างน้อย 1 คน')) && admins === 1,
+      'สำเร็จคนเดียว อีกคนถูกปฏิเสธ → ยังเหลือ admin 1 คน', `${race.map((r) => r.ok).join(',')} · admin เหลือ ${admins}`);
   } else {
     console.log(`SKIP  มี admin คนอื่นในระบบ ${others} คน — ทดสอบกรณี "admin คนสุดท้าย" ไม่ได้ (ตรวจแค่ว่ายังมี admin)`);
     ok(admins >= 1, 'ยังมี admin ในระบบ');

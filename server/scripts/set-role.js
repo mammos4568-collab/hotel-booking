@@ -1,5 +1,6 @@
 // ============================================================
-// ตั้งบทบาทผู้ใช้จาก command line — ใช้ตั้ง "admin คนแรก" (คนต่อไปตั้งจากหน้าหลังบ้าน เมนูผู้ใช้ ได้เลย)
+// ตั้งบทบาทผู้ใช้จาก command line — **ทางเดียวที่ตั้ง/ถอดผู้ดูแลระบบ (admin) ได้**
+// (หน้าเว็บเมนู "ผู้ใช้และสิทธิ์" เปลี่ยนได้แค่ ลูกค้า ↔ เจ้าของโรงแรม)
 //
 //   node --env-file=server/.env server/scripts/set-role.js <email> <user|owner|admin> [--hotels=1,2]
 //     --hotels  ใช้กับ owner: ยกโรงแรมรหัสเหล่านี้ให้เป็นของผู้ใช้คนนี้
@@ -7,8 +8,8 @@
 //   บน production (รันใน container ที่มีค่า DATABASE_URL อยู่แล้ว):
 //   docker compose -f docker-compose.prod.yml --env-file .env.production exec app node server/scripts/set-role.js <email> admin
 //
-// ทำไมไม่มี API ให้ตั้ง admin คนแรก: ถ้ามี ใครก็ยิง API ตั้งตัวเองเป็น admin ได้
-// → คนที่เข้าถึงเครื่อง server/ฐานข้อมูลได้เท่านั้นที่ควรทำได้
+// ทำไมไม่มี API ให้ตั้ง/ถอด admin: ถ้ามี คนที่ได้บัญชี admin บนเว็บไป (รหัสผ่าน/cookie หลุด) จะตั้งบัญชีตัวเอง
+// เป็น admin เพิ่ม หรือถอด admin ตัวจริงออกได้ → ให้เฉพาะคนที่เข้าเครื่อง server/ฐานข้อมูลได้เท่านั้นที่ทำได้
 // ============================================================
 import { pool } from '../src/db.js';
 
@@ -27,11 +28,18 @@ if (!email || !ROLES.includes(role) || hotelIds.some((id) => !Number.isInteger(i
 const client = await pool.connect();
 try {
   await client.query('BEGIN');
+  // 🔒 ล็อกแถว admin ทุกคนก่อน (เรียงตาม user_id) แล้วค่อยล็อกแถวผู้ใช้ — ลำดับเดียวกับลบบัญชีใน modules/privacy
+  //    ทุกฝั่งล็อกตามลำดับเดียวกัน → ไม่เกิด deadlock (A รอ B ขณะที่ B รอ A)
+  //    ถ้ารันสคริปต์ถอด admin สองคนพร้อมกัน คนที่สองต้องรอ แล้วนับใหม่ → ไม่มีทางเหลือ admin เป็นศูนย์คน
+  const { rows: admins } = await client.query(`SELECT user_id FROM users WHERE role = 'admin' ORDER BY user_id FOR UPDATE`);
   const { rows: [user] } = await client.query(
     'SELECT user_id, role FROM users WHERE LOWER(email) = LOWER($1) FOR UPDATE',
     [email.trim()],
   );
   if (!user) throw new Error(`ไม่พบผู้ใช้อีเมล ${email} — สมัครสมาชิกผ่านหน้าเว็บก่อน`);
+  if (user.role === 'admin' && role !== 'admin' && admins.length <= 1) {
+    throw new Error('ต้องมีผู้ดูแลระบบอย่างน้อย 1 คน — ตั้งคนอื่นเป็น admin ก่อน แล้วค่อยเปลี่ยนบทบาทคนนี้');
+  }
 
   await client.query('UPDATE users SET role = $2, updated_at = now() WHERE user_id = $1', [user.user_id, role]);
   // ไม่ใช่ owner แล้ว → ถอดออกจากโรงแรมที่เคยดูแล (เหมือนเปลี่ยนในหน้าหลังบ้าน)

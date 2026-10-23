@@ -1,18 +1,20 @@
-// หลังบ้าน (admin เท่านั้น): ผู้ใช้และสิทธิ์ — เปลี่ยนบทบาท ลูกค้า / เจ้าของโรงแรม / ผู้ดูแลระบบ
-// กฎที่ server บังคับ: เปลี่ยนบทบาทตัวเองไม่ได้ · ต้องเหลือ admin อย่างน้อย 1 คน · เลิกเป็น owner = ถอดจากโรงแรมที่ดูแล
+// หลังบ้าน (admin เท่านั้น): ผู้ใช้และสิทธิ์ — เปลี่ยนบทบาท ลูกค้า ↔ เจ้าของโรงแรม
+// กฎที่ server บังคับ: ตั้ง/ถอดผู้ดูแลระบบได้จาก server/scripts/set-role.js เท่านั้น (หน้าเว็บแตะบัญชี admin ไม่ได้)
+// · เปลี่ยนบทบาทตัวเองไม่ได้ · เลิกเป็น owner = ถอดจากโรงแรมที่ดูแล
 import { useEffect, useState } from 'react';
 import { api } from '../../api.js';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
+import Icon from '../../components/Icon.jsx';
 import { PageLoader } from '../../components/Loading.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { formatDate } from '../../lib/format.js';
 import { Field, Notice, PageHeader, Pagination, ROLE_META, RoleBadge, card, inputClass, useAdminData } from './adminUi.jsx';
 
+// บทบาทที่เลือกได้ในหน้าเว็บ (ตรงกับ WEB_ROLES ใน server/src/modules/admin/users.js)
 const ROLE_HELP = {
   user: { th: 'จองที่พักได้อย่างเดียว ไม่มีสิทธิ์เข้าหลังบ้าน', en: 'Can book stays only — no back-office access' },
   owner: { th: 'จัดการได้เฉพาะโรงแรมที่ตั้งให้เป็นเจ้าของ (ตั้งที่หน้าแก้ไขโรงแรม)', en: 'Manages only the hotels assigned to them (set on the hotel page)' },
-  admin: { th: 'เห็นและแก้ได้ทุกอย่าง รวมถึงสิทธิ์ของผู้ใช้คนอื่น', en: 'Full access, including other users’ roles' },
 };
 
 export default function UsersPage() {
@@ -51,7 +53,13 @@ export default function UsersPage() {
 
   return (
     <div>
-      <PageHeader title={tx('ผู้ใช้และสิทธิ์', 'Users & roles')} description={tx('ตั้งเจ้าของโรงแรมและผู้ดูแลระบบ', 'Assign hotel owners and admins')} />
+      <PageHeader
+        title={tx('ผู้ใช้และสิทธิ์', 'Users & roles')}
+        description={tx(
+          'ตั้งหรือถอดเจ้าของโรงแรม — ผู้ดูแลระบบตั้ง/ถอดได้จากคำสั่งบน server เท่านั้น (server/scripts/set-role.js)',
+          'Assign or remove hotel owners — admins can only be added or removed from the server command line (server/scripts/set-role.js)',
+        )}
+      />
 
       <div className={`${card} mb-4 flex flex-wrap items-end gap-3 p-4`}>
         <Field label={tx('ค้นหา', 'Search')} className="w-full sm:w-72">
@@ -89,16 +97,21 @@ export default function UsersPage() {
                   {user.hotels > 0 && <> · {tx(`ดูแล ${user.hotels} โรงแรม`, `owns ${user.hotels} hotels`)}</>}
                   <span className="block">{tx('สมัครเมื่อ', 'Joined')} {formatDate(user.createdAt, lang)}</span>
                 </p>
-                <select
-                  value={user.role}
-                  disabled={user.isMe}
-                  title={user.isMe ? tx('เปลี่ยนบทบาทของตัวเองไม่ได้', 'You can’t change your own role') : undefined}
-                  onChange={(event) => { setNotice(''); setChange({ user, role: event.target.value }); }}
-                  aria-label={tx(`บทบาทของ ${user.name}`, `Role for ${user.name}`)}
-                  className={`${inputClass} sm:w-44`}
-                >
-                  {Object.entries(ROLE_META).map(([key, meta]) => <option key={key} value={key}>{tx(meta.th, meta.en)}</option>)}
-                </select>
+                {user.role === 'admin' ? (
+                  // บัญชี admin (รวมตัวเอง) เปลี่ยนจากหน้าเว็บไม่ได้ — server ก็ปฏิเสธ (403) ถ้ายิง API ตรง
+                  <p className="flex items-center gap-1.5 text-xs text-slate-500 sm:w-44 sm:justify-end">
+                    <Icon name="lock" className="h-3.5 w-3.5 shrink-0" />{tx('เปลี่ยนได้จากคำสั่งบน server', 'Server command line only')}
+                  </p>
+                ) : (
+                  <select
+                    value={user.role}
+                    onChange={(event) => { setNotice(''); setChange({ user, role: event.target.value }); }}
+                    aria-label={tx(`บทบาทของ ${user.name}`, `Role for ${user.name}`)}
+                    className={`${inputClass} sm:w-44`}
+                  >
+                    {Object.keys(ROLE_HELP).map((key) => <option key={key} value={key}>{tx(ROLE_META[key].th, ROLE_META[key].en)}</option>)}
+                  </select>
+                )}
               </li>
             ))}
           </ul>
