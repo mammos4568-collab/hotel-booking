@@ -104,7 +104,13 @@ dc exec app node server/scripts/set-role.js <อีเมลที่สมั�
 
 ---
 
-## 4. ล็อกอินด้วย GitHub / ชำระเงินผ่าน Opn (ไม่บังคับ)
+## 4. ล็อกอินด้วย Google / GitHub · ชำระเงินผ่าน Opn (ไม่บังคับ)
+
+**Google** — ใช้ OAuth client เดิมที่ใช้กับ localhost ได้เลย (Google ใส่ redirect URI ได้หลายอัน)
+Google Auth Platform → Clients → เลือก client → Authorized redirect URIs กด Add URI:
+`https://myhotel.duckdns.org/api/auth/google/callback` (ถ้า Google ให้เพิ่มโดเมนใน Branding → Authorized domains ก็ใส่ `myhotel.duckdns.org`)
+แล้วใส่ `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` ใน `.env.production` → `dc up -d`
+ยังเป็นโหมด Testing อยู่ → ล็อกอินได้เฉพาะอีเมลใน Test users (เพิ่มอีเมลอาจารย์/เพื่อนไว้ก่อนวันพรีเซนต์)
 
 **GitHub** — OAuth App ของ GitHub ใส่ callback ได้ที่เดียว จึงต้อง **สร้างอันใหม่** สำหรับเว็บจริง (อันเดิมใช้กับ localhost ต่อ)
 GitHub → Settings → Developer settings → OAuth Apps → New OAuth App
@@ -113,7 +119,6 @@ GitHub → Settings → Developer settings → OAuth Apps → New OAuth App
 - Authorization callback URL: `https://myhotel.duckdns.org/api/auth/github/callback`
 
 ใส่ `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` ใน `.env.production` แล้ว `dc up -d` (สร้าง container แอปใหม่ด้วยค่าใหม่)
-Google / Facebook ทำแบบเดียวกัน callback เป็น `/api/auth/google/callback`, `/api/auth/facebook/callback`
 
 **Opn (TrueMoney โหมดทดสอบ)** — ใส่ `OMISE_SECRET_KEY` / `OMISE_PUBLIC_KEY` (key ทดสอบ `skey_test_…` / `pkey_test_…`)
 ใน `.env.production` แล้ว `dc up -d` · ใน dashboard ของ Opn (โหมด Test) ตั้ง webhook เป็น
@@ -129,7 +134,7 @@ Google / Facebook ทำแบบเดียวกัน callback เป็น 
 - [ ] จอง + จ่ายด้วยบัตรทดสอบ `4242 4242 4242 4242` ได้ · พิมพ์เลขบัตรอื่นแล้วหน้าเว็บไม่ยอมส่ง
 - [ ] เข้าหลังบ้าน `/admin` ได้หลังตั้ง admin
 - [ ] จากเครื่องตัวเอง `curl -m 5 http://<IP ของ VM>:8080` ต้อง **เข้าไม่ได้** (แอปเปิดแค่ใน VM ให้ Caddy)
-- [ ] (ถ้าตั้ง) ล็อกอินด้วย GitHub · จ่าย TrueMoney ผ่าน Opn แล้วกด Successful
+- [ ] (ถ้าตั้ง) ล็อกอินด้วย Google / GitHub · จ่าย TrueMoney ผ่าน Opn แล้วกด Successful
 
 ---
 
@@ -163,6 +168,8 @@ dc down                             # หยุดทั้งหมด (ข้�
 | เปิดเว็บได้ `502` | แอปยังไม่ขึ้น → `dc ps`, `dc logs app` |
 | ล็อกอินแล้วเด้งออก / เรียก API ได้ `403` | `PUBLIC_URL` ไม่ตรงกับที่พิมพ์ในเบราว์เซอร์ (ต้อง `https://` และไม่มี `/` ท้าย) แก้แล้ว `dc up -d` |
 | ล็อกอิน GitHub ขึ้น `redirect_uri is not associated` | callback ใน OAuth App ไม่ตรงกับ `<PUBLIC_URL>/api/auth/github/callback` |
+| ล็อกอิน Google ขึ้น `Error 400: redirect_uri_mismatch` | ยังไม่ได้เพิ่ม `<PUBLIC_URL>/api/auth/google/callback` ใน Authorized redirect URIs ของ client |
+| ล็อกอิน Google ขึ้น `access_denied` / ไม่ให้เข้า | แอปยังเป็นโหมด Testing และอีเมลนั้นไม่อยู่ใน Test users |
 
 ---
 

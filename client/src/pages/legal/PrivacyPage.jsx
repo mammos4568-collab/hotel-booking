@@ -5,7 +5,7 @@ import Icon from '../../components/Icon.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { formatDate } from '../../lib/format.js';
 
-const LAST_UPDATED = '2026-10-22';
+const LAST_UPDATED = '2026-10-23';
 const CONTACT_EMAIL = 'privacy@hotelbooking.example';
 
 function Section({ id, icon, title, children }) {
@@ -90,8 +90,8 @@ export default function PrivacyPage() {
           <Section {...sections[0]}>
             <Bullets
               items={[
-                tx('บัญชีผู้ใช้: ชื่อ-นามสกุล อีเมล รหัสผ่าน (เก็บแบบเข้ารหัสทางเดียว ไม่มีใครเห็นรหัสจริง) เบอร์โทรและรูปโปรไฟล์ถ้าคุณกรอก และบัญชี Google/Facebook/GitHub ที่คุณเลือกเชื่อม',
-                  'Account: name, email, password (stored as a one-way hash), phone and photo if you add them, and any Google/Facebook/GitHub account you choose to link.'),
+                tx('บัญชีผู้ใช้: ชื่อ-นามสกุล อีเมล รหัสผ่าน (เก็บแบบเข้ารหัสทางเดียว ไม่มีใครเห็นรหัสจริง) เบอร์โทรและรูปโปรไฟล์ถ้าคุณกรอก และบัญชี Google/GitHub ที่คุณเลือกเชื่อม',
+                  'Account: name, email, password (stored as a one-way hash), phone and photo if you add them, and any Google/GitHub account you choose to link.'),
                 tx('การจอง: ชื่อผู้เข้าพัก อีเมล เบอร์โทร (ไม่บังคับ) คำขอพิเศษ วันเข้าพัก และจำนวนผู้เข้าพัก',
                   'Bookings: guest name, email, phone (optional), special requests, stay dates and number of guests.'),
                 tx('การชำระเงิน: วิธีชำระ ยอดเงิน เวลา และเลข 4 หลักท้ายของบัตรเท่านั้น — เราไม่เก็บเลขบัตรเต็ม วันหมดอายุ หรือรหัส CVC และไม่เก็บเบอร์ที่กรอกตอนจ่ายด้วย TrueMoney Wallet',

@@ -20,12 +20,13 @@ Stack: **React (Vite + Tailwind v4) + Express + PostgreSQL 15** รันผ่�
 `server/src/index.js`, `client/src/App.jsx`, `client/src/api.js`, `package.json`, `.gitignore`
 
 > งานในไฟล์ของเพื่อนที่ผู้ใช้สั่งให้ทำแทนแล้ว: rate limit ล็อกอิน, ข้อความไทยใน `modules/user/` + `middleware/auth.js`,
-> แจ้ง PDPA ใน `AuthModal.jsx`, ปุ่ม Google/GitHub/Facebook ที่ยังไม่ตั้งค่าให้พากลับหน้าเว็บพร้อมข้อความ
+> แจ้ง PDPA ใน `AuthModal.jsx`, ปุ่มเข้าสู่ระบบที่ยังไม่ตั้งค่าให้พากลับหน้าเว็บพร้อมข้อความ
 > (`modules/user/routes.js`, `AuthModal.jsx`, `pages/user/ProfilePage.jsx`), แปลหน้าเข้าสู่ระบบ + หน้าโปรไฟล์เป็น 2 ภาษา
 > และแก้บันทึกโปรไฟล์ตอนไม่ใส่รูปไม่ได้ (`ProfilePage.jsx` ส่ง `avatarUrl: null`),
 > `splitName()` ใน `modules/user/routes.js` ให้ชื่อคำเดียวได้นามสกุล `''` (`users.last_name` เป็น NOT NULL —
 > เดิมสมัคร/ล็อกอิน GitHub ด้วยชื่อคำเดียวแล้ว error) · **หลังบ้านแอดมิน** (`modules/admin/`, `pages/admin/`) เดิมเป็นของเพื่อน
-> ผู้ใช้สั่งให้ทำเองทั้งหมดเมื่อ 22 ต.ค. 2569 จึงย้ายมาเป็นงานของผู้ใช้แล้ว
+> ผู้ใช้สั่งให้ทำเองทั้งหมดเมื่อ 22 ต.ค. 2569 จึงย้ายมาเป็นงานของผู้ใช้แล้ว · **ตัดเข้าสู่ระบบด้วย Facebook ออก** (เหลือ Google / GitHub)
+> และให้ error ของ Google บอกสาเหตุ — `modules/user/routes.js`, `AuthModal.jsx`, `ProfilePage.jsx` (23 ต.ค. 2569)
 
 สเปกงานละเอียด: `docs/booking.md` (จอง/ชำระเงิน/รายการโปรด/deploy) · `docs/search.md` (ค้นหา/หน้าโรงแรม) ·
 `docs/assistant.md` (ผู้ช่วยแนะนำที่พัก) · `docs/admin.md` (หลังบ้าน)

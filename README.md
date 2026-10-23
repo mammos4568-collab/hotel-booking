@@ -3,7 +3,7 @@
 เว็บจองโรงแรมแบบ Agoda (โปรเจกต์รายวิชา): ค้นหาตามวัน/จำนวนคน/งบ/สิ่งอำนวยความสะดวก, หน้าโรงแรมพร้อมห้องว่างจริง,
 จองหลายห้องในครั้งเดียว (กันจองซ้อนด้วย transaction + row lock), ชำระเงินจำลอง, ยกเลิก/คืนเงิน, รีวิว, รายการโปรด,
 ผู้ช่วยแนะนำที่พัก (แชท ทำเองแบบกฎ + คำสำคัญ ไม่ใช้ AI ภายนอก), หลังบ้านเจ้าของโรงแรม/ผู้ดูแลระบบ,
-เข้าสู่ระบบด้วยอีเมลหรือ Google / GitHub / Facebook, หน้า PDPA (ขอสำเนาข้อมูล/ลบบัญชี), สองภาษา ไทย/อังกฤษ
+เข้าสู่ระบบด้วยอีเมลหรือ Google / GitHub, หน้า PDPA (ขอสำเนาข้อมูล/ลบบัญชี), สองภาษา ไทย/อังกฤษ
 
 ## วิธีรันครั้งแรก
 
@@ -16,7 +16,7 @@ docker compose up -d
 # 2. ตั้งค่า server
 cp server/.env.example server/.env   # Windows CMD: copy server\.env.example server\.env
 # ตั้ง JWT_SECRET เป็นค่าสุ่มที่ยาวอย่างน้อย 32 ตัวอักษรก่อนรัน server
-# เข้าสู่ระบบด้วย Google / GitHub / Facebook ไม่บังคับ — ดูหัวข้อด้านล่าง (ยังไม่ตั้ง = กดปุ่มแล้วขึ้นว่ายังไม่เปิด)
+# เข้าสู่ระบบด้วย Google / GitHub ไม่บังคับ — ดูหัวข้อด้านล่าง (ยังไม่ตั้ง = กดปุ่มแล้วขึ้นว่ายังไม่เปิด)
 
 # 3. ติดตั้ง package ทั้งหมด (ทำครั้งเดียว)
 npm install
@@ -62,7 +62,7 @@ node --env-file=server/.env server/scripts/set-role.js owner@example.com owner -
 
 รายละเอียด (สิทธิ์, API, จุดที่ล็อกแถวกันจองเกิน, PDPA): `docs/admin.md`
 
-## เข้าสู่ระบบด้วย Google / GitHub / Facebook (ไม่บังคับ)
+## เข้าสู่ระบบด้วย Google / GitHub (ไม่บังคับ)
 
 โค้ดพร้อมแล้ว (`server/src/modules/user/routes.js`) ขาดแค่ Client ID / Secret ของแต่ละเจ้า — ช่องไหนยังไม่ตั้ง
 กดปุ่มแล้วหน้าเว็บจะบอกว่ายังไม่เปิด ใช้อีเมล + รหัสผ่านได้ตามปกติ สมัครแอปกับแต่ละเจ้าแล้วใส่ callback ตามนี้:
@@ -70,13 +70,13 @@ node --env-file=server/.env server/scripts/set-role.js owner@example.com owner -
 | เจ้า | สมัครที่ | callback (ตอนพัฒนา) | ใส่ใน `server/.env` |
 |---|---|---|---|
 | GitHub (ง่ายสุด) | github.com → Settings → Developer settings → OAuth Apps → New OAuth App | `http://localhost:3000/api/auth/github/callback` | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` |
-| Google | console.cloud.google.com → APIs & Services → Credentials → OAuth client ID (Web application) | `http://localhost:3000/api/auth/google/callback` | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
-| Facebook | developers.facebook.com → Create App → เพิ่ม Facebook Login | `http://localhost:3000/api/auth/facebook/callback` | `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET` |
+| Google | console.cloud.google.com → Google Auth Platform → Clients → Create client (Web application) | `http://localhost:3000/api/auth/google/callback` | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
 
-- Google: หน้า OAuth consent screen ตั้งเป็น Testing แล้วเพิ่มอีเมลที่จะใช้ทดสอบใน Test users
-- Facebook: ตอนแอปเป็นโหมด Development ล็อกอินได้เฉพาะคนที่อยู่ใน App roles (ผู้ดูแล/ผู้ทดสอบของแอป)
+- Google: ตั้งหน้า consent ก่อน (Branding: ชื่อแอป + อีเมล · Audience: External) — ระหว่างเป็น **Testing** ล็อกอินได้เฉพาะอีเมล
+  ที่เพิ่มไว้ใน Test users (ใส่ของตัวเอง เพื่อน อาจารย์) · client เดียวใส่ redirect URI ได้หลายอัน (localhost + โดเมนจริง)
+  · คัดลอก Client secret เก็บทันทีตอนสร้าง (ภายหลังอาจดูซ้ำไม่ได้)
 - ช่อง `*_CALLBACK_URL` ใน `server/.env` ตั้งไว้แล้ว ต้องตรงกับที่ลงทะเบียนทุกตัวอักษร
-- แก้ `server/.env` แล้วต้องปิดเปิด `npm run dev` ใหม่ (server ไม่โหลด `.env` ซ้ำเอง) · **ห้าม commit ค่า Secret**
+- แก้ `server/.env` แล้วบันทึก server รีสตาร์ตเอง (`node --watch`) ถ้ายังไม่ได้ค่าใหม่ให้ปิดเปิด `npm run dev` · **ห้าม commit ค่า Secret**
 - อีเมลที่สมัครไว้แล้วจะไม่ถูกรวมบัญชีอัตโนมัติ (กันการยึดบัญชีคนอื่น) → ล็อกอินด้วยรหัสผ่านก่อนแล้วกด "เชื่อมต่อ" ที่หน้าโปรไฟล์
 
 ## ชำระเงินผ่าน Opn Payments (โหมดทดสอบ · ไม่บังคับ · ฟรี)
@@ -111,8 +111,8 @@ docker compose -f docker-compose.prod.yml --env-file .env.production up -d --bui
 - ใช้งานจริงต้องเป็น **HTTPS** (คุกกี้ล็อกอินเป็น `Secure` เมื่อ `NODE_ENV=production`) — บน VPS ตั้ง
   `PUBLIC_URL=https://<โดเมน>` + `TRUST_PROXY=1` แล้วเพิ่ม `--profile https` → Caddy (`Caddyfile`) ขอใบรับรองฟรีและต่ออายุให้เอง
   **ขั้นตอนเต็ม (VM, โดเมนฟรี, firewall, admin, GitHub/Opn, อัปเดต, backup): `docs/deploy-vps.md`**
-- เข้าสู่ระบบด้วย Google / GitHub / Facebook บน production: ใส่ Client ID / Secret ใน `.env.production`
-  แล้วลงทะเบียน callback กับแต่ละเจ้าเป็น `<PUBLIC_URL>/api/auth/<google|github|facebook>/callback` (ระบบต่อ URL ให้เอง)
+- เข้าสู่ระบบด้วย Google / GitHub บน production: ใส่ Client ID / Secret ใน `.env.production`
+  แล้วลงทะเบียน callback กับแต่ละเจ้าเป็น `<PUBLIC_URL>/api/auth/<google|github>/callback` (ระบบต่อ URL ให้เอง)
 - ตั้ง admin คนแรกบน production:
   `docker compose -f docker-compose.prod.yml --env-file .env.production exec app node server/scripts/set-role.js <email> admin`
 - รายละเอียด: `docs/booking.md` ข้อ 11

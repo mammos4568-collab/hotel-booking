@@ -109,7 +109,7 @@ export default function MyDataPage() {
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-extrabold text-slate-900">{tx('ลบบัญชี', 'Delete account')}</h2>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
-              <li>{tx('ลบบัญชีและการเชื่อมต่อ Google/Facebook/GitHub ทั้งหมด — ย้อนกลับไม่ได้', 'Deletes your account and linked sign-ins — this cannot be undone')}</li>
+              <li>{tx('ลบบัญชีและการเชื่อมต่อ Google/GitHub ทั้งหมด — ย้อนกลับไม่ได้', 'Deletes your account and linked sign-ins — this cannot be undone')}</li>
               <li>{tx('ประวัติการจองเก็บไว้เป็นหลักฐานทางบัญชี แต่ลบชื่อ อีเมล เบอร์โทร และคำขอพิเศษออกจนระบุตัวตนไม่ได้', 'Past bookings stay as accounting records, with your name, email, phone and requests removed')}</li>
               <li>{tx('รีวิวที่เคยเขียนยังแสดงอยู่ แต่ไม่แสดงชื่อคุณ', 'Your reviews stay visible without your name')}</li>
               <li>{tx('ต้องยกเลิกการจองที่ยังไม่เข้าพักก่อน', 'Cancel any upcoming bookings first')}</li>

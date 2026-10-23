@@ -293,7 +293,7 @@ PASS  ยกเลิกแล้วห้องกลับมาว่าง�
 - ความลับอยู่ใน `.env.production` (ไม่ commit) — ตัวอย่างที่ `.env.production.example`
 - `NODE_ENV=production` ทำให้คุกกี้ล็อกอินเป็น `Secure` → ใช้งานจริงต้องเป็น HTTPS (ยกเว้น localhost)
   อยู่หลัง reverse proxy ให้ตั้ง `TRUST_PROXY=1` ไม่งั้น rate limit จะนับทุกคนเป็น IP เดียวกัน
-- เข้าสู่ระบบด้วย Google / GitHub / Facebook: compose ส่ง Client ID / Secret จาก `.env.production` เข้า container
+- เข้าสู่ระบบด้วย Google / GitHub: compose ส่ง Client ID / Secret จาก `.env.production` เข้า container
   และต่อ callback เป็น `<PUBLIC_URL>/api/auth/<เจ้า>/callback` ให้เอง (หน้าเว็บกับ API อยู่โดเมนเดียวกัน)
   — ช่องไหนเว้นว่างจะปิดช่องทางนั้น กดแล้วหน้าเว็บบอกว่ายังไม่เปิด (เดิม production ไม่ได้ส่งค่าเหล่านี้เข้า container เลย)
 - ทดสอบแล้วบนเครื่อง: หน้าเว็บ/ลิงก์ลึก (`/hotels/7`), API, สมัครสมาชิก, ผู้ช่วย, header ความปลอดภัย,

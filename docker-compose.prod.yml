@@ -40,18 +40,15 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-agoda_admin}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agoda_db}
       JWT_SECRET: ${JWT_SECRET:?ต้องตั้ง JWT_SECRET (อย่างน้อย 32 ตัวอักษร) ใน .env.production}
-      # ต้องตรงกับ URL ที่ผู้ใช้เปิดเว็บ (ใช้ตรวจ CORS และเป็นปลายทางหลังล็อกอินผ่าน Google/Facebook/GitHub)
+      # ต้องตรงกับ URL ที่ผู้ใช้เปิดเว็บ (ใช้ตรวจ CORS และเป็นปลายทางหลังล็อกอินผ่าน Google/GitHub)
       CLIENT_URL: ${PUBLIC_URL:-http://localhost:8080}
       TRUST_PROXY: ${TRUST_PROXY:-}
-      # เข้าสู่ระบบด้วย Google / Facebook / GitHub — ช่องไหนเว้นว่าง = ปิดช่องทางนั้น (กดแล้วหน้าเว็บบอกว่ายังไม่เปิด)
+      # เข้าสู่ระบบด้วย Google / GitHub — ช่องไหนเว้นว่าง = ปิดช่องทางนั้น (กดแล้วหน้าเว็บบอกว่ายังไม่เปิด)
       # callback ต่อจาก PUBLIC_URL ให้เอง เพราะ production เสิร์ฟหน้าเว็บและ API จากโดเมนเดียวกัน
-      # → ต้องลงทะเบียน <PUBLIC_URL>/api/auth/<google|facebook|github>/callback ไว้กับแต่ละเจ้าให้ตรงกัน
+      # → ต้องลงทะเบียน <PUBLIC_URL>/api/auth/<google|github>/callback ไว้กับแต่ละเจ้าให้ตรงกัน
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_CALLBACK_URL: ${PUBLIC_URL:-http://localhost:8080}/api/auth/google/callback
-      FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:-}
-      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-}
-      FACEBOOK_CALLBACK_URL: ${PUBLIC_URL:-http://localhost:8080}/api/auth/facebook/callback
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       GITHUB_CALLBACK_URL: ${PUBLIC_URL:-http://localhost:8080}/api/auth/github/callback
