@@ -92,7 +92,7 @@ export default function MyDataPage() {
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-extrabold text-slate-900">{tx('ดาวน์โหลดสำเนาข้อมูล', 'Download a copy of your data')}</h2>
             <p className="mt-1 text-sm text-slate-600">
-              {tx('ไฟล์ JSON ที่มีข้อมูลบัญชี การจอง การชำระเงิน (เฉพาะ 4 หลักท้ายของบัตร) และรีวิวทั้งหมดของคุณ', 'A JSON file with your profile, bookings, payments (last 4 card digits only) and reviews.')}
+              {tx('ไฟล์ JSON ที่มีข้อมูลบัญชี รูปโปรไฟล์ที่อัปโหลด การจอง การชำระเงิน (เฉพาะ 4 หลักท้ายของบัตร) และรีวิวทั้งหมดของคุณ', 'A JSON file with your profile, uploaded profile photo, bookings, payments (last 4 card digits only) and reviews.')}
             </p>
             {exportError && <p className="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{exportError}</p>}
             <button type="button" onClick={downloadData} disabled={exporting} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-black disabled:opacity-60">
@@ -109,7 +109,7 @@ export default function MyDataPage() {
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-extrabold text-slate-900">{tx('ลบบัญชี', 'Delete account')}</h2>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
-              <li>{tx('ลบบัญชีและการเชื่อมต่อ Google/GitHub ทั้งหมด — ย้อนกลับไม่ได้', 'Deletes your account and linked sign-ins — this cannot be undone')}</li>
+              <li>{tx('ลบบัญชี รูปโปรไฟล์ และการเชื่อมต่อ Google/GitHub ทั้งหมด — ย้อนกลับไม่ได้', 'Deletes your account, profile photo and linked sign-ins — this cannot be undone')}</li>
               <li>{tx('ประวัติการจองเก็บไว้เป็นหลักฐานทางบัญชี แต่ลบชื่อ อีเมล เบอร์โทร และคำขอพิเศษออกจนระบุตัวตนไม่ได้', 'Past bookings stay as accounting records, with your name, email, phone and requests removed')}</li>
               <li>{tx('รีวิวที่เคยเขียนยังแสดงอยู่ แต่ไม่แสดงชื่อคุณ', 'Your reviews stay visible without your name')}</li>
               <li>{tx('ต้องยกเลิกการจองที่ยังไม่เข้าพักก่อน', 'Cancel any upcoming bookings first')}</li>

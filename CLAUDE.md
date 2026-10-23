@@ -9,7 +9,7 @@ Stack: **React (Vite + Tailwind v4) + Express + PostgreSQL 15** รันผ่�
 
 | | ขอบเขต | ไฟล์ |
 |---|---|---|
-| **ผู้ใช้เครื่องนี้ (ตัวหลัก)** | ค้นหา, หน้าโรงแรม, **จอง, ชำระเงิน**, การจองของฉัน, รีวิว, รายการโปรด, ผู้ช่วยแนะนำที่พัก, **หลังบ้าน (แอดมิน/เจ้าของโรงแรม)**, PDPA, UI กลาง, ฐานข้อมูล, deploy | `server/src/modules/search/`, `server/src/modules/booking/`, `server/src/modules/favorites/`, `server/src/modules/assistant/`, `server/src/modules/admin/`, `server/src/modules/privacy/`, `server/src/lib/`, `server/scripts/`, `server/test/`, `client/src/pages/search/`, `client/src/pages/booking/`, `client/src/pages/admin/`, `client/src/pages/legal/`, `client/src/components/`, `client/src/context/FavoritesContext.jsx`, `client/src/lib/`, `client/src/styles.css`, `db/` (เฉพาะ `03-` ถึง `09-`), `Dockerfile`, `docker-compose.prod.yml`, `Caddyfile` |
+| **ผู้ใช้เครื่องนี้ (ตัวหลัก)** | ค้นหา, หน้าโรงแรม, **จอง, ชำระเงิน**, การจองของฉัน, รีวิว, รายการโปรด, ผู้ช่วยแนะนำที่พัก, **หลังบ้าน (แอดมิน/เจ้าของโรงแรม)**, PDPA, UI กลาง, ฐานข้อมูล, deploy | `server/src/modules/search/`, `server/src/modules/booking/`, `server/src/modules/favorites/`, `server/src/modules/assistant/`, `server/src/modules/admin/`, `server/src/modules/privacy/`, `server/src/lib/`, `server/scripts/`, `server/test/`, `client/src/pages/search/`, `client/src/pages/booking/`, `client/src/pages/admin/`, `client/src/pages/legal/`, `client/src/components/`, `client/src/context/FavoritesContext.jsx`, `client/src/lib/`, `client/src/styles.css`, `db/` (เฉพาะ `03-` ถึง `10-`), `Dockerfile`, `docker-compose.prod.yml`, `Caddyfile` |
 | **เพื่อนอีกคน** | สมัครสมาชิก/เข้าสู่ระบบ (JWT) | `server/src/modules/user/`, `server/src/middleware/auth.js`, `client/src/pages/user/` |
 
 > **ห้ามแก้ไฟล์ของเพื่อน** (`modules/user/`, `middleware/auth.js`, `pages/user/`)
@@ -27,6 +27,8 @@ Stack: **React (Vite + Tailwind v4) + Express + PostgreSQL 15** รันผ่�
 > เดิมสมัคร/ล็อกอิน GitHub ด้วยชื่อคำเดียวแล้ว error) · **หลังบ้านแอดมิน** (`modules/admin/`, `pages/admin/`) เดิมเป็นของเพื่อน
 > ผู้ใช้สั่งให้ทำเองทั้งหมดเมื่อ 22 ต.ค. 2569 จึงย้ายมาเป็นงานของผู้ใช้แล้ว · **ตัดเข้าสู่ระบบด้วย Facebook ออก** (เหลือ Google / GitHub)
 > และให้ error ของ Google บอกสาเหตุ — `modules/user/routes.js`, `AuthModal.jsx`, `ProfilePage.jsx` (23 ต.ค. 2569)
+> · **รูปโปรไฟล์อัปจากเครื่อง** — `modules/user/avatar.js` (ไฟล์ใหม่), `modules/user/routes.js` (ผูก route + `PUT /me` ไม่รับลิงก์รูปแล้ว),
+> `ProfilePage.jsx` (ช่องลิงก์ → ปุ่มเลือกรูปจากเครื่อง/ลบรูป) (24 ต.ค. 2569)
 
 สเปกงานละเอียด: `docs/booking.md` (จอง/ชำระเงิน/รายการโปรด/deploy) · `docs/search.md` (ค้นหา/หน้าโรงแรม) ·
 `docs/assistant.md` (ผู้ช่วยแนะนำที่พัก) · `docs/admin.md` (หลังบ้าน)
@@ -41,7 +43,7 @@ Stack: **React (Vite + Tailwind v4) + Express + PostgreSQL 15** รันผ่�
 3. แก้ไฟล์ใน `db/` เมื่อไหร่ **ต้องบอกผู้ใช้ให้แจ้งเพื่อน**
    - `01-schema.sql`, `02-datas.sql` เป็นของทีม — อย่าแก้ ถ้าต้องเพิ่มตาราง/คอลัมน์ให้เพิ่มในไฟล์ใหม่
      แบบ `03-booking.sql` (ใช้ `IF NOT EXISTS` ให้รันซ้ำได้)
-   - `03-booking.sql`, `04-demo-data.sql`, `05-admin.sql`, `06-payment-gateway.sql`, `07-hotel-images.sql`, `08-hotel-approval.sql`, `09-room-images.sql` รันซ้ำได้ เพื่อนอัปเดตด้วย `psql -f` ได้เลยโดยไม่ต้องลบข้อมูล (ดูวิธีรัน)
+   - `03-booking.sql`, `04-demo-data.sql`, `05-admin.sql`, `06-payment-gateway.sql`, `07-hotel-images.sql`, `08-hotel-approval.sql`, `09-room-images.sql`, `10-user-avatars.sql` รันซ้ำได้ เพื่อนอัปเดตด้วย `psql -f` ได้เลยโดยไม่ต้องลบข้อมูล (ดูวิธีรัน)
 4. ผู้ใช้เป็นนักศึกษาและกำลังเรียนอยู่ — โค้ดส่วนสำคัญ (ทรานแซกชัน, การล็อกแถว,
    การกันจองซ้อน) ให้**อธิบายเหตุผลสั้นๆ** ว่าทำไมต้องเขียนแบบนี้ ไม่ใช่โยนโค้ดให้เฉยๆ
    โปรเจกต์นี้ต้องพรีเซนต์ ผู้ใช้ต้องตอบคำถามอาจารย์ได้ทุกบรรทัด
@@ -65,6 +67,7 @@ node server/test/favorites.js            # รายการโปรด
 node server/test/payment-methods.js      # วิธีชำระเงิน บัตร / PromptPay / TrueMoney Wallet (จำลอง)
 node server/test/assistant.js            # ผู้ช่วยแนะนำที่พัก (~120 ข้อ · ส่วนตีความไม่ต้องเปิด server)
 node server/test/admin.js                # หลังบ้าน 76 ข้อ (อ่าน server/.env เอง เพื่อตั้ง admin + ล้างข้อมูลทดสอบ)
+node server/test/avatar.js               # รูปโปรไฟล์ 18 ข้อ (ตรวจไฟล์, ลิงก์รหัสสุ่ม, สำเนาข้อมูล, ลบบัญชี · อ่าน server/.env เอง)
 node server/test/hotel-images.js         # รูปโรงแรม + รูปห้อง 43 ข้อ (สูงสุด 5 รูป, ตรวจไฟล์, อัปพร้อมกัน · อ่าน server/.env เอง)
 node server/test/hotel-approval.js       # อนุมัติโรงแรม + คำหยาบ/ทับศัพท์ 56 ข้อ (อ่าน server/.env เอง)
 node --env-file=server/.env server/scripts/set-role.js <email> admin   # ตั้ง/ถอด admin ได้ทางนี้ทางเดียว (owner: เพิ่ม --hotels=1,2)
@@ -74,7 +77,7 @@ node --env-file=server/.env server/scripts/set-role.js <email> admin   # ตั�
 - เช็ก API http://localhost:3000/api/health
 - เข้า psql: `docker compose exec postgres psql -U agoda_admin -d agoda_db`
 - อัปเดต DB เดิมด้วยไฟล์ที่รันซ้ำได้ (ไม่ลบข้อมูล):
-  `docker compose exec -T postgres psql -U agoda_admin -d agoda_db -f /docker-entrypoint-initdb.d/03-booking.sql` (และ 04–09)
+  `docker compose exec -T postgres psql -U agoda_admin -d agoda_db -f /docker-entrypoint-initdb.d/03-booking.sql` (และ 04–10)
 - `docker compose down -v` = **ลบข้อมูลทั้งหมด** ใช้เมื่อผู้ใช้สั่งเท่านั้น
 - production: `docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build` → http://localhost:8080
   (project แยกชื่อ `hotel-booking-prod` มี volume ของตัวเอง · `.env.production` ไม่ commit · ดู README หัวข้อ Deploy)
@@ -111,6 +114,9 @@ node --env-file=server/.env server/scripts/set-role.js <email> admin   # ตั�
 - PDPA: เก็บข้อมูลส่วนบุคคลเท่าที่จำเป็น · ห้าม log body/cookie/ข้อมูลส่วนตัว · เปลี่ยนวิธีเก็บ/ใช้ข้อมูลเมื่อไหร่
   ต้องแก้หน้า `client/src/pages/legal/PrivacyPage.jsx` ให้ตรงด้วย · ขอสำเนาข้อมูล/ลบบัญชีอยู่ที่ `modules/privacy/`
   (ข้อมูลใหม่ที่ผูกกับผู้ใช้ต้องใส่ใน export และจัดการตอนลบบัญชีด้วย) · สรุปงาน PDPA อยู่ที่ `docs/booking.md` ข้อ 9
+- รูปโปรไฟล์: อัป/ลบที่ `PUT/DELETE /api/auth/me/avatar` เท่านั้น (`modules/user/avatar.js` · ตาราง `user_avatars`) · เบราว์เซอร์ย่อเป็น
+  400×400 (`resizeAvatar()`) · ไฟล์เสิร์ฟด้วยรหัสสุ่ม `/api/auth/avatars/<uuid>` — **อย่าทำ URL รูปตามเลขผู้ใช้** (ไล่ดึงรูปทุกคนได้)
+  · แสดงรูปผู้ใช้ด้วย `components/UserAvatar.jsx` (ไม่มีรูป/โหลดไม่ได้ → ตัวอักษรแรกของชื่อ)
 - หลังบ้าน `/api/admin`: ทุกเส้นผ่าน `requireRole('owner', 'admin')` · owner จำกัดเฉพาะโรงแรมตัวเองด้วย `ownedBy()` /
   `loadHotel()` / `loadRoom()` ใน `modules/admin/scope.js` · ทุกการแก้ไขเรียก `logAction()` ใน transaction เดียวกับงาน
   (ห้ามใส่ข้อมูลส่วนตัวลูกค้าใน detail) · แก้จำนวนห้อง/ปฏิทินต้องล็อกแถว `rooms` ก่อนนับการจอง (แบบเดียวกับตอนจอง)
@@ -154,8 +160,9 @@ oauth_accounts(...)                                                         -- �
 admin_audit_log†(log_id, user_id, action, entity_id, detail JSONB, created_at)  -- บันทึกการทำงานหลังบ้าน
 property_images§(image_id, property_id, position, mime_type, data BYTEA, byte_size, created_at)  -- รูปโรงแรม ลำดับ 1–5 ไม่ซ้ำ
 room_images◊(image_id, room_id, position, mime_type, data BYTEA, byte_size, created_at)  -- รูปประเภทห้อง ลำดับ 1–5 ไม่ซ้ำ
+user_avatars△(user_id PK, avatar_key UUID, mime_type, data BYTEA, byte_size, updated_at)  -- รูปโปรไฟล์ 1 คน 1 รูป
 ```
-`*` = เพิ่มใน `03-booking.sql` · `†` = เพิ่มใน `05-admin.sql` · `‡` = เพิ่มใน `06-payment-gateway.sql` · `§` = เพิ่มใน `07-hotel-images.sql` · `¶` = เพิ่มใน `08-hotel-approval.sql` · `◊` = เพิ่มใน `09-room-images.sql`
+`*` = เพิ่มใน `03-booking.sql` · `†` = เพิ่มใน `05-admin.sql` · `‡` = เพิ่มใน `06-payment-gateway.sql` · `§` = เพิ่มใน `07-hotel-images.sql` · `¶` = เพิ่มใน `08-hotel-approval.sql` · `◊` = เพิ่มใน `09-room-images.sql` · `△` = เพิ่มใน `10-user-avatars.sql`
 
 **สิ่งที่ต้องรู้เกี่ยวกับ `bookings`:**
 

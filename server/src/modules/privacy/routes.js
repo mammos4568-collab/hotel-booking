@@ -26,11 +26,17 @@ function httpError(status, message) {
 router.get('/export', requireAuth, exportLimiter, async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const [profile, accounts, bookings, payments, reviews, favorites, ownedHotels, adminActions] = await Promise.all([
+    const [profile, avatar, accounts, bookings, payments, reviews, favorites, ownedHotels, adminActions] = await Promise.all([
       pool.query(
         `SELECT first_name, last_name, email, phone_number, avatar_url, role, membership_tier,
                 created_at, updated_at
            FROM users WHERE user_id = $1`,
+        [userId]
+      ),
+      // รูปโปรไฟล์ที่อัปโหลดไว้ (db/10) — ใส่ตัวรูปมาด้วยแบบ base64 จะได้เป็นสำเนาที่ใช้ได้แม้ลบบัญชีไปแล้ว
+      pool.query(
+        `SELECT byte_size, updated_at, encode(data, 'base64') AS data_base64, mime_type
+           FROM user_avatars WHERE user_id = $1`,
         [userId]
       ),
       pool.query('SELECT provider, created_at FROM oauth_accounts WHERE user_id = $1 ORDER BY provider', [userId]),
@@ -81,6 +87,14 @@ router.get('/export', requireAuth, exportLimiter, async (req, res, next) => {
       exportedAt: new Date().toISOString(),
       note: 'ข้อมูลส่วนบุคคลทั้งหมดที่ระบบเก็บเกี่ยวกับคุณ — ไม่มีรหัสผ่านและเลขบัตรเต็ม เพราะระบบไม่เก็บ',
       profile: profile.rows[0] ?? null,
+      uploadedAvatar: avatar.rows[0]
+        ? {
+          uploadedAt: avatar.rows[0].updated_at,
+          bytes: avatar.rows[0].byte_size,
+          // encode(..., 'base64') ของ PostgreSQL ขึ้นบรรทัดใหม่ทุก 76 ตัวอักษร → ตัดออกให้เป็น data URL ที่เปิดได้เลย
+          image: `data:${avatar.rows[0].mime_type};base64,${avatar.rows[0].data_base64.replace(/\n/g, '')}`,
+        }
+        : null,
       linkedSignIns: accounts.rows,
       bookings: bookings.rows,
       payments: payments.rows,
@@ -99,7 +113,7 @@ router.get('/export', requireAuth, exportLimiter, async (req, res, next) => {
 // body: { password } สำหรับบัญชีที่มีรหัสผ่าน · { confirm: 'ลบบัญชี' } เสมอ
 //
 // สิ่งที่เกิดขึ้น:
-//   - ลบแถวผู้ใช้ + บัญชี Google/GitHub ที่เชื่อมไว้ + รายการโปรด (ON DELETE CASCADE)
+//   - ลบแถวผู้ใช้ + บัญชี Google/GitHub ที่เชื่อมไว้ + รายการโปรด + รูปโปรไฟล์ที่อัปไว้ (ON DELETE CASCADE)
 //   - การจองเก่า "ไม่ลบ" เพราะเป็นหลักฐานทางบัญชี แต่ลบข้อมูลที่ระบุตัวตนออก
 //     (ชื่อ อีเมล เบอร์ คำขอพิเศษ และตัดความเชื่อมโยงกับบัญชี) → ระบุตัวตนไม่ได้แล้ว
 //   - รีวิวยังแสดงอยู่ แต่ไม่ผูกกับบัญชีแล้ว (แสดงเป็น "ผู้เข้าพัก")

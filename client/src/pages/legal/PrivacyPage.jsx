@@ -5,7 +5,7 @@ import Icon from '../../components/Icon.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { formatDate } from '../../lib/format.js';
 
-const LAST_UPDATED = '2026-10-23';
+const LAST_UPDATED = '2026-10-24';
 const CONTACT_EMAIL = 'privacy@hotelbooking.example';
 
 function Section({ id, icon, title, children }) {
@@ -90,8 +90,10 @@ export default function PrivacyPage() {
           <Section {...sections[0]}>
             <Bullets
               items={[
-                tx('บัญชีผู้ใช้: ชื่อ-นามสกุล อีเมล รหัสผ่าน (เก็บแบบเข้ารหัสทางเดียว ไม่มีใครเห็นรหัสจริง) เบอร์โทรและรูปโปรไฟล์ถ้าคุณกรอก และบัญชี Google/GitHub ที่คุณเลือกเชื่อม',
-                  'Account: name, email, password (stored as a one-way hash), phone and photo if you add them, and any Google/GitHub account you choose to link.'),
+                tx('บัญชีผู้ใช้: ชื่อ-นามสกุล อีเมล รหัสผ่าน (เก็บแบบเข้ารหัสทางเดียว ไม่มีใครเห็นรหัสจริง) เบอร์โทรถ้าคุณกรอก รูปโปรไฟล์ถ้าคุณอัปโหลด (หรือรูปจากบัญชี Google/GitHub ตอนสมัครด้วยช่องทางนั้น) และบัญชี Google/GitHub ที่คุณเลือกเชื่อม',
+                  'Account: name, email, password (stored as a one-way hash), phone if you add it, a profile photo if you upload one (or the photo from Google/GitHub when you sign up that way), and any Google/GitHub account you choose to link.'),
+                tx('รูปโปรไฟล์ที่อัปโหลด: เบราว์เซอร์ย่อเป็น 400×400 และลบข้อมูลแฝงในไฟล์ (เช่น พิกัด GPS ที่ถ่าย) ก่อนส่งมาเก็บในระบบของเรา · แสดงต่อสาธารณะคู่กับรีวิวที่คุณเขียน โดยลิงก์รูปเป็นรหัสสุ่มที่เดาไม่ได้ · ลบเองได้ทุกเมื่อที่หน้าโปรไฟล์ และถูกลบทันทีเมื่อลบบัญชี',
+                  'Uploaded profile photo: your browser resizes it to 400×400 and strips hidden file data (such as GPS location) before it reaches us · it is shown publicly next to reviews you write, behind an unguessable link · remove it anytime on your profile page; it is deleted immediately with your account.'),
                 tx('การจอง: ชื่อผู้เข้าพัก อีเมล เบอร์โทร (ไม่บังคับ) คำขอพิเศษ วันเข้าพัก และจำนวนผู้เข้าพัก',
                   'Bookings: guest name, email, phone (optional), special requests, stay dates and number of guests.'),
                 tx('การชำระเงิน: วิธีชำระ ยอดเงิน เวลา และเลข 4 หลักท้ายของบัตรเท่านั้น — เราไม่เก็บเลขบัตรเต็ม วันหมดอายุ หรือรหัส CVC และไม่เก็บเบอร์ที่กรอกตอนจ่ายด้วย TrueMoney Wallet',
@@ -140,8 +142,8 @@ export default function PrivacyPage() {
                   'Paying with TrueMoney via Opn Payments (our payment processor — test mode in this project): we send Opn only the amount and booking reference; you confirm the payment in the TrueMoney app, and we never receive your wallet credentials or account details.'),
                 tx('เจ้าของที่พักที่คุณจอง (และผู้ดูแลระบบ) เห็นชื่อ อีเมล เบอร์โทร และคำขอพิเศษของการจองนั้น เพื่อเตรียมการเข้าพักและติดต่อคุณ — เจ้าของแต่ละรายเห็นเฉพาะการจองของที่พักตัวเอง',
                   'The property you book (and our admins) can see the guest name, email, phone and special requests of that booking to prepare your stay and contact you — each owner sees only bookings for their own property.'),
-                tx('หน้าเว็บโหลดไฟล์จากบริการภายนอก ได้แก่ ฟอนต์ (Google Fonts) รูปภาพ (Unsplash) แผนที่ (OpenStreetMap) และไอคอนธง (flagcdn) ซึ่งจะเห็น IP address ของคุณตามปกติของการโหลดไฟล์',
-                  'Pages load files from third parties — fonts (Google Fonts), photos (Unsplash), maps (OpenStreetMap) and flag icons (flagcdn) — which can see your IP address as part of serving them.'),
+                tx('หน้าเว็บโหลดไฟล์จากบริการภายนอก ได้แก่ ฟอนต์ (Google Fonts) รูปภาพ (Unsplash) แผนที่ (OpenStreetMap) ไอคอนธง (flagcdn) และรูปโปรไฟล์ที่มาจากบัญชี Google/GitHub (ถ้าเจ้าของยังไม่ได้อัปรูปเอง) ซึ่งจะเห็น IP address ของคุณตามปกติของการโหลดไฟล์',
+                  'Pages load files from third parties — fonts (Google Fonts), photos (Unsplash), maps (OpenStreetMap), flag icons (flagcdn) and profile photos that come from Google/GitHub accounts (until their owner uploads one) — which can see your IP address as part of serving them.'),
               ]}
             />
           </Section>
@@ -152,8 +154,8 @@ export default function PrivacyPage() {
                 tx('ข้อมูลบัญชี: เก็บไว้ตลอดที่คุณยังมีบัญชีกับเรา', 'Account data: kept while your account exists.'),
                 tx('ข้อมูลการจองและการชำระเงิน: เก็บเท่าที่จำเป็นต่อการให้บริการ การบัญชี และตามที่กฎหมายกำหนด', 'Booking and payment records: kept as long as needed to provide the service, for accounting, and as required by law.'),
                 tx('การจองที่ยังไม่ชำระเงินจะถือห้องไว้ 15 นาที เกินเวลาจะถูกปิดอัตโนมัติ', 'Unpaid bookings hold a room for 15 minutes and are then closed automatically.'),
-                tx('เมื่อลบบัญชี: บัญชีถูกลบทันที ประวัติการจองเก็บไว้แบบระบุตัวตนไม่ได้ (ลบชื่อ อีเมล เบอร์ คำขอพิเศษ) และรีวิวยังแสดงแต่ไม่มีชื่อคุณ',
-                  'When you delete your account: it is removed immediately; past bookings are kept without anything that identifies you, and reviews stay without your name.'),
+                tx('เมื่อลบบัญชี: บัญชีและรูปโปรไฟล์ถูกลบทันที ประวัติการจองเก็บไว้แบบระบุตัวตนไม่ได้ (ลบชื่อ อีเมล เบอร์ คำขอพิเศษ) และรีวิวยังแสดงแต่ไม่มีชื่อและรูปของคุณ',
+                  'When you delete your account: it and your profile photo are removed immediately; past bookings are kept without anything that identifies you, and reviews stay without your name or photo.'),
                 tx('บันทึกการทำงานในหลังบ้าน: เก็บไว้ตรวจสอบย้อนหลังโดยไม่มีข้อมูลส่วนตัวของลูกค้า — เมื่อเจ้าหน้าที่ลบบัญชี บันทึกยังอยู่แต่ไม่ผูกกับบัญชีนั้น และโรงแรมที่ดูแลกลับไปให้ผู้ดูแลระบบ',
                   'Back-office activity log: kept for accountability with no customer personal data — if a staff member deletes their account, entries stay but are no longer linked to them, and their properties go back to the admins.'),
               ]}

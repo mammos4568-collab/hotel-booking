@@ -7,6 +7,7 @@ import RatingBadge from '../../components/RatingBadge.jsx';
 import FavoriteButton from '../../components/FavoriteButton.jsx';
 import PhotoLightbox from '../../components/PhotoLightbox.jsx';
 import SmartImage from '../../components/SmartImage.jsx';
+import UserAvatar from '../../components/UserAvatar.jsx';
 import DatePicker from '../../components/DatePicker.jsx';
 import GuestPicker from '../../components/GuestPicker.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
@@ -290,13 +291,7 @@ function ReviewsSection({ hotelId }) {
                 <li key={review.id} className="py-4 first:pt-0">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      {review.user?.avatarUrl ? (
-                        <img src={review.user.avatarUrl} alt="" className="h-9 w-9 rounded-full object-cover" />
-                      ) : (
-                        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-sm font-bold text-white">
-                          {(review.user?.name || 'G').charAt(0).toUpperCase()}
-                        </span>
-                      )}
+                      <UserAvatar name={review.user?.name || 'G'} src={review.user?.avatarUrl} className="h-9 w-9 text-sm" />
                       <div>
                         <p className="text-sm font-bold text-slate-900">{shortName(review.user?.name) || tx('ผู้เข้าพัก', 'Guest')}</p>
                         <p className="text-xs text-slate-400">{formatDate(String(review.createdAt).slice(0, 10), lang)}</p>

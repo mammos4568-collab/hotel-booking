@@ -11,8 +11,11 @@ import {
   setOAuthStateCookie,
   signToken,
 } from '../../middleware/auth.js';
+import avatarRoutes from './avatar.js';
 
 const router = Router();
+// รูปโปรไฟล์อัปจากเครื่อง: PUT/DELETE /me/avatar · GET /avatars/:key (ดู avatar.js)
+router.use(avatarRoutes);
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // ---------------------------------------------------------------------------
@@ -394,7 +397,9 @@ router.get('/me', requireAuth, (req, res) => {
 
 router.put('/me', requireAuth, async (req, res, next) => {
   try {
-    const allowed = ['name', 'phone', 'avatarUrl'];
+    // รูปโปรไฟล์เปลี่ยนที่ PUT/DELETE /me/avatar เท่านั้น (avatar.js) — ไม่รับลิงก์รูปจากที่อื่นแล้ว
+    // (ลิงก์ภายนอกอาจเป็นรูปติดตามว่าใครเปิดดูรีวิว และทำให้รูปที่อัปไว้ค้างอยู่โดยไม่ได้ใช้)
+    const allowed = ['name', 'phone'];
     const unknown = Object.keys(req.body || {}).filter((key) => !allowed.includes(key));
     if (unknown.length) return res.status(400).json({ message: `แก้ไขข้อมูลนี้ไม่ได้: ${unknown[0]}` });
 
@@ -415,21 +420,15 @@ router.put('/me', requireAuth, async (req, res, next) => {
     }
 
     const phone = Object.hasOwn(req.body, 'phone') ? req.body.phone : profile.phone_number;
-    const avatarUrl = Object.hasOwn(req.body, 'avatarUrl') ? req.body.avatarUrl : profile.avatar_url;
     if (phone !== null && phone !== undefined && (typeof phone !== 'string' || phone.length > 50)) {
       return res.status(400).json({ message: 'เบอร์โทรต้องไม่เกิน 50 ตัวอักษร' });
     }
-    if (avatarUrl !== null && avatarUrl !== undefined) {
-      if (typeof avatarUrl !== 'string' || avatarUrl.length > 2048 || !avatarUrl.startsWith('https://')) {
-        return res.status(400).json({ message: 'ลิงก์รูปโปรไฟล์ต้องขึ้นต้นด้วย https:// และยาวไม่เกิน 2048 ตัวอักษร' });
-      }
-    }
 
     const { rows } = await pool.query(
-      `UPDATE users SET first_name = $1, last_name = $2, phone_number = $3, avatar_url = $4, updated_at = CURRENT_TIMESTAMP
-       WHERE user_id = $5
+      `UPDATE users SET first_name = $1, last_name = $2, phone_number = $3, updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = $4
        RETURNING user_id, first_name, last_name, email, phone_number, avatar_url, role`,
-      [firstName, lastName, phone || null, avatarUrl || null, req.user.id],
+      [firstName, lastName, phone || null, req.user.id],
     );
     res.json({ user: publicUser(rows[0]) });
   } catch (error) {

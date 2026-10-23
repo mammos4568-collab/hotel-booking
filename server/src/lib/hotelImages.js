@@ -61,17 +61,22 @@ export function readJpegSize(buffer) {
   return null;
 }
 
-// ตรวจไฟล์ที่อัปมา (ใช้ทั้งรูปโรงแรมและรูปห้อง — มาตรฐานเดียวกัน) → คืนข้อความ error ภาษาไทย หรือ null ถ้าผ่าน
+// ตรวจไฟล์ JPEG ที่อัปมา → คืนข้อความ error ภาษาไทย หรือ null ถ้าผ่าน (ใช้กับรูปโรงแรม รูปห้อง และรูปโปรไฟล์)
 // ดูจาก "เนื้อไฟล์" จริง ไม่เชื่อนามสกุลหรือ Content-Type ที่หน้าเว็บบอกมา
-export function checkHotelImage(buffer) {
+export function checkJpegImage(buffer, { width, height, maxBytes }) {
   if (!Buffer.isBuffer(buffer) || buffer.length === 0) return 'ไม่พบไฟล์รูป';
-  if (buffer.length > MAX_IMAGE_BYTES) return `ไฟล์รูปใหญ่เกิน ${MAX_IMAGE_BYTES / 1_000_000} MB`;
+  if (buffer.length > maxBytes) {
+    return `ไฟล์รูปใหญ่เกิน ${maxBytes >= 1_000_000 ? `${maxBytes / 1_000_000} MB` : `${maxBytes / 1000} KB`}`;
+  }
   const size = readJpegSize(buffer);
   // ไฟล์ JPEG ที่สมบูรณ์ต้องปิดท้ายด้วย EOI (FF D9) — ไม่มี = อัปโหลดขาดกลางทาง
   const complete = buffer[buffer.length - 2] === 0xFF && buffer[buffer.length - 1] === 0xD9;
   if (!size || !complete) return 'ไฟล์ไม่ใช่รูป JPEG ที่ระบบย่อแล้ว — เลือกรูปใหม่ผ่านหน้าเว็บ';
-  if (size.width !== IMAGE_WIDTH || size.height !== IMAGE_HEIGHT) {
-    return `รูปต้องมีขนาด ${IMAGE_WIDTH}×${IMAGE_HEIGHT} (หน้าเว็บย่อให้อัตโนมัติ) แต่ได้ ${size.width}×${size.height}`;
+  if (size.width !== width || size.height !== height) {
+    return `รูปต้องมีขนาด ${width}×${height} (หน้าเว็บย่อให้อัตโนมัติ) แต่ได้ ${size.width}×${size.height}`;
   }
   return null;
 }
+
+// รูปโรงแรม/รูปห้อง: 1200×800 ไม่เกิน 1.5 MB
+export const checkHotelImage = (buffer) => checkJpegImage(buffer, { width: IMAGE_WIDTH, height: IMAGE_HEIGHT, maxBytes: MAX_IMAGE_BYTES });

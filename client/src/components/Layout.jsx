@@ -6,6 +6,7 @@ import AuthModal from './AuthModal.jsx';
 import AssistantWidget from './AssistantWidget.jsx';
 import { FavoritesProvider } from '../context/FavoritesContext.jsx';
 import Footer from './Footer.jsx';
+import UserAvatar from './UserAvatar.jsx';
 
 export default function Layout() {
   const { pathname } = useLocation();
@@ -95,7 +96,9 @@ export default function Layout() {
 
             {user ? (
               <>
-                <Link to="/profile" className="text-sm font-semibold text-slate-700 hover:text-blue-600 px-2 py-2">{user.name}</Link>
+                <Link to="/profile" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-blue-600 px-2 py-2">
+                  <UserAvatar name={user.name} src={user.avatarUrl} className="h-7 w-7 text-xs" />{user.name}
+                </Link>
                 <button type="button" onClick={() => logout()} className="text-sm font-semibold text-slate-700 hover:text-blue-600 px-2 py-2">{t('nav_signout')}</button>
               </>
             ) : (
@@ -176,7 +179,9 @@ export default function Layout() {
             <div className="pt-6 border-t border-slate-100 space-y-2">
               {user ? (
                 <>
-                  <Link to="/profile" onClick={() => setIsMobileMenuOpen(false)} className="w-full py-2 text-slate-700 text-center text-xs font-bold rounded-xl block">{user.name}</Link>
+                  <Link to="/profile" onClick={() => setIsMobileMenuOpen(false)} className="flex w-full items-center justify-center gap-2 py-2 text-slate-700 text-xs font-bold rounded-xl">
+                    <UserAvatar name={user.name} src={user.avatarUrl} className="h-6 w-6 text-[10px]" />{user.name}
+                  </Link>
                   <button type="button" onClick={() => { setIsMobileMenuOpen(false); logout(); }} className="w-full py-2 bg-blue-600 text-white text-center text-xs font-bold rounded-xl block">{t('nav_signout')}</button>
                 </>
               ) : (

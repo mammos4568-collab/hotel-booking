@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../api.js';
+import UserAvatar from '../../components/UserAvatar.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
+import { resizeAvatar, resizeErrorText } from '../../lib/imageResize.js';
 
 const OAUTH_PROVIDERS = [
   {
@@ -39,7 +41,8 @@ export default function ProfilePage() {
   const [searchParams] = useSearchParams();
   const [name, setName] = useState(user?.name || '');
   const [phone, setPhone] = useState(user?.phone || '');
-  const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl || '');
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const avatarInput = useRef(null);
   const [accounts, setAccounts] = useState([]);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -75,14 +78,50 @@ export default function ProfilePage() {
     setError('');
     setSavingProfile(true);
     try {
-      // ช่องรูปโปรไฟล์ว่าง → ส่ง null (= ไม่มีรูป) · server รับ null แต่ปฏิเสธ string ว่าง ('' ไม่ขึ้นต้นด้วย https://)
-      await api('/auth/me', { method: 'PUT', body: { name, phone, avatarUrl: avatarUrl.trim() || null } });
+      // รูปโปรไฟล์ไม่ได้ส่งไปกับฟอร์มนี้แล้ว — อัป/ลบแยกที่ /auth/me/avatar (มีผลทันที)
+      await api('/auth/me', { method: 'PUT', body: { name, phone } });
       await refreshUser();
       setNotice(tx('บันทึกโปรไฟล์แล้ว', 'Profile saved'));
     } catch (err) {
       setError(err.message);
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  // เลือกรูปจากเครื่อง → ครอปเป็นสี่เหลี่ยมจัตุรัส ย่อเป็น 400×400 ในเบราว์เซอร์ (ลบข้อมูลแฝงอย่างพิกัด GPS)
+  // แล้วส่งไบต์รูปไปตรงๆ · server ตรวจซ้ำ แล้วให้ลิงก์รูปใหม่ (รหัสสุ่ม) → โหลดข้อมูลผู้ใช้ใหม่ให้รูปเปลี่ยนทุกที่
+  const uploadAvatar = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = ''; // เลือกไฟล์เดิมซ้ำได้
+    if (!file) return;
+    setNotice('');
+    setError('');
+    setAvatarBusy(true);
+    try {
+      const blob = await resizeAvatar(file);
+      await api('/auth/me/avatar', { method: 'PUT', body: blob });
+      await refreshUser();
+      setNotice(tx('เปลี่ยนรูปโปรไฟล์แล้ว', 'Profile photo updated'));
+    } catch (err) {
+      setError(resizeErrorText(err, tx));
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const removeAvatar = async () => {
+    setNotice('');
+    setError('');
+    setAvatarBusy(true);
+    try {
+      await api('/auth/me/avatar', { method: 'DELETE' });
+      await refreshUser();
+      setNotice(tx('ลบรูปโปรไฟล์แล้ว', 'Profile photo removed'));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setAvatarBusy(false);
     }
   };
 
@@ -145,6 +184,28 @@ export default function ProfilePage() {
       {/* ── Profile form ── */}
       <form onSubmit={saveProfile} className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 space-y-4">
         <h2 className="font-bold text-slate-900">{tx('ข้อมูลส่วนตัว', 'Personal details')}</h2>
+        {/* รูปโปรไฟล์: อัป/ลบมีผลทันที (ไม่ต้องกดบันทึกโปรไฟล์) */}
+        <div className="flex items-center gap-4">
+          <UserAvatar name={user?.name} src={user?.avatarUrl} className="h-20 w-20 text-2xl" />
+          <div className="min-w-0 space-y-2">
+            <p className="text-sm font-semibold text-slate-700">{tx('รูปโปรไฟล์', 'Profile photo')}</p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => avatarInput.current?.click()} disabled={avatarBusy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+                {avatarBusy ? tx('กำลังอัปโหลด…', 'Uploading…') : tx('เลือกรูปจากเครื่อง', 'Choose from device')}
+              </button>
+              {user?.avatarUrl && (
+                <button type="button" onClick={removeAvatar} disabled={avatarBusy} className="rounded-lg px-3 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60">
+                  {tx('ลบรูป', 'Remove photo')}
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-slate-400">
+              {tx('ครอปเป็นสี่เหลี่ยมจัตุรัสและย่อเป็น 400×400 ให้อัตโนมัติ · ข้อมูลแฝงในไฟล์ เช่น พิกัด GPS ถูกลบก่อนอัปโหลด · รูปนี้แสดงคู่กับรีวิวที่คุณเขียน',
+                'Cropped to a square and resized to 400×400 automatically · hidden file data such as GPS location is removed before upload · shown next to reviews you write')}
+            </p>
+          </div>
+          <input ref={avatarInput} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={uploadAvatar} />
+        </div>
         <label className="block text-sm font-semibold text-slate-700">{tx('ชื่อ', 'Name')}
           <input required maxLength={200} value={name} onChange={(e) => setName(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5" />
         </label>
@@ -153,10 +214,6 @@ export default function ProfilePage() {
         </label>
         <label className="block text-sm font-semibold text-slate-700">{tx('เบอร์โทรศัพท์', 'Phone number')}
           <input maxLength={50} value={phone || ''} onChange={(e) => setPhone(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5" />
-        </label>
-        <label className="block text-sm font-semibold text-slate-700">{tx('ลิงก์รูปโปรไฟล์', 'Avatar URL')}
-          <input type="text" maxLength={2048} value={avatarUrl || ''} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://..." pattern="https://.*" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5" />
-          <span className="text-xs text-slate-400 mt-1 block">{tx('ต้องเป็น URL ที่ขึ้นต้นด้วย https://', 'Must be a URL starting with https://')}</span>
         </label>
         <button disabled={savingProfile} className="rounded-lg bg-blue-600 px-4 py-2.5 font-bold text-white disabled:opacity-60">
           {savingProfile ? tx('กำลังบันทึก…', 'Saving…') : tx('บันทึกโปรไฟล์', 'Save profile')}
