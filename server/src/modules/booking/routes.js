@@ -4,6 +4,7 @@ import { pool } from '../../db.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { ACTIVE_BOOKING_SQL, HOLD_MINUTES, getNightlyRates, lockRoomType, summarizeStay } from '../../lib/availability.js';
 import { BOOKING_SELECT, cancelBooking, deriveStatus, findBooking, serializeBooking } from '../../lib/bookings.js';
+import { hotelCoverSql } from '../../lib/hotelImages.js';
 import { todayInBangkok, validateStay } from '../../lib/dates.js';
 import { rateLimit } from '../../lib/rateLimit.js';
 import { containsProfanity } from '../../lib/moderation.js';
@@ -86,7 +87,7 @@ router.get('/quote', async (req, res, next) => {
     const { rows } = await pool.query(
       `SELECT r.room_id, r.room_type_name, r.description, r.max_guests, r.image_url, r.bed_type,
               r.size_sqm, r.breakfast_included,
-              p.property_id, p.name, p.city, p.address, p.star_rating::float AS stars, p.image_url AS hotel_image
+              p.property_id, p.name, p.city, p.address, p.star_rating::float AS stars, ${hotelCoverSql('p')} AS hotel_image
          FROM rooms r JOIN properties p ON p.property_id = r.property_id
         WHERE r.room_id = $1`,
       [roomId]

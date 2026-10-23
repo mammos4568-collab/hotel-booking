@@ -6,6 +6,7 @@
 import { Router } from 'express';
 import { pool } from '../../db.js';
 import { requireAuth } from '../../middleware/auth.js';
+import { hotelCoverSql } from '../../lib/hotelImages.js';
 import { serializeHotel } from '../../lib/hotelSearch.js';
 import { rateLimit } from '../../lib/rateLimit.js';
 
@@ -32,7 +33,7 @@ router.get('/', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
       `SELECT p.property_id, p.name, p.property_type, p.city, p.country, p.address, p.star_rating,
-              p.image_url, p.amenities, rv.avg_rating, rv.review_count, pr.nightly_from, f.created_at AS saved_at
+              ${hotelCoverSql('p')} AS image_url, p.amenities, rv.avg_rating, rv.review_count, pr.nightly_from, f.created_at AS saved_at
          FROM favorites f
          JOIN properties p ON p.property_id = f.property_id
          LEFT JOIN LATERAL (

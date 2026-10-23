@@ -6,6 +6,7 @@
 // ============================================================
 import { roomAvailabilitySql } from './availability.js';
 import { nightsBetween } from './dates.js';
+import { hotelCoverSql } from './hotelImages.js';
 
 // ORDER BY เลือกจาก whitelist นี้เท่านั้น — ไม่ต่อ string จากผู้ใช้เข้า SQL
 export const SORTS = {
@@ -113,7 +114,7 @@ export async function searchHotels(db, {
      ),
      h AS (
        SELECT p.property_id, p.name, p.property_type, p.city, p.country, p.address,
-              p.star_rating, p.image_url, p.amenities,
+              p.star_rating, ${hotelCoverSql('p')} AS image_url, p.amenities,
               MIN(e.nightly_price) AS nightly_from,
               MIN(e.stay_price) AS stay_from,
               (ARRAY_AGG(e.available ORDER BY e.nightly_price))[1] AS rooms_left,

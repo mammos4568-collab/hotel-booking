@@ -12,6 +12,7 @@ import { AMENITIES, PROPERTY_TYPES } from '../../lib/format.js';
 import {
   Field, Modal, Notice, PageHeader, baht, buttonDanger, buttonPrimary, buttonSecondary, card, inputClass, useAdminData,
 } from './adminUi.jsx';
+import HotelPhotos, { HotelPhotoDraft, uploadDraftPhotos } from './HotelPhotos.jsx';
 
 const EMPTY_HOTEL = {
   name: '', propertyType: 'Hotel', starRating: '', city: '', address: '', country: 'Thailand',
@@ -104,7 +105,10 @@ export default function HotelEditorPage() {
   const { data, error: loadError, reload } = useAdminData(id ? `/admin/hotels/${id}` : null);
   const { data: ownerData } = useAdminData(isAdmin ? '/admin/users/owners' : null);
   const [form, setForm] = useState(EMPTY_HOTEL);
+  const [draftPhotos, setDraftPhotos] = useState([]); // หน้าเพิ่มโรงแรม: รูปที่เลือกไว้ รออัปหลังสร้างโรงแรม
+  const [photoBusy, setPhotoBusy] = useState(false); // กำลังย่อรูปที่เพิ่งเลือก → ยังไม่ให้กดบันทึก
   const [saving, setSaving] = useState(false);
+  const [progress, setProgress] = useState(''); // ข้อความบนปุ่มตอนอัปรูป เช่น "กำลังอัปรูป 2/5…"
   const [message, setMessage] = useState(null); // { tone, text }
   const [roomDialog, setRoomDialog] = useState(null); // null | { room } (room = null คือเพิ่มใหม่)
   const [confirm, setConfirm] = useState(null); // { kind: 'hotel' } | { kind: 'room', room }
@@ -121,9 +125,26 @@ export default function HotelEditorPage() {
     });
   }, [hotel]);
 
-  // เพิ่งสร้างโรงแรมเสร็จ (เด้งมาจากหน้าเพิ่มพร้อม state.created) → บอกขั้นต่อไป
+  // เพิ่งสร้างโรงแรมเสร็จ (เด้งมาจากหน้าเพิ่มพร้อม state.created = ผลการอัปรูป) → บอกผล + ขั้นต่อไป
   useEffect(() => {
-    if (location.state?.created) setMessage({ tone: 'success', text: tx('เพิ่มโรงแรมแล้ว — ขั้นต่อไปเพิ่มประเภทห้องด้านล่าง', 'Hotel created — next, add room types below') });
+    const created = location.state?.created;
+    if (!created) return;
+    if (created.failed) {
+      setMessage({
+        tone: 'error',
+        text: tx(
+          `เพิ่มโรงแรมแล้ว แต่อัปรูปไม่สำเร็จ ${created.failed} รูป (${created.error}) — เพิ่มรูปอีกครั้งได้ในส่วน "รูปโรงแรม" ด้านล่าง`,
+          `Hotel created, but ${created.failed} photo(s) failed to upload (${created.error}) — add them again in the Photos section below`,
+        ),
+      });
+      return;
+    }
+    setMessage({
+      tone: 'success',
+      text: created.uploaded
+        ? tx(`เพิ่มโรงแรมพร้อมรูป ${created.uploaded} รูปแล้ว — ขั้นต่อไปเพิ่มประเภทห้องด้านล่าง`, `Hotel created with ${created.uploaded} photo(s) — next, add room types below`)
+        : tx('เพิ่มโรงแรมแล้ว — ขั้นต่อไปเพิ่มประเภทห้องด้านล่าง', 'Hotel created — next, add room types below'),
+    });
   }, [location.state]);
 
   const set = (key) => (event) => setForm({ ...form, [key]: event.target.value });
@@ -145,12 +166,18 @@ export default function HotelEditorPage() {
         setMessage({ tone: 'success', text: tx('บันทึกข้อมูลโรงแรมแล้ว', 'Hotel saved') });
         reload();
       } else {
-        navigate(`/admin/hotels/${result.hotel.id}`, { replace: true, state: { created: true } });
+        // ได้รหัสโรงแรมแล้ว → อัปรูปที่เลือกไว้ตามลำดับ (รูปแรก = รูปปก) แล้วไปหน้าแก้ไขพร้อมผลการอัป
+        const photos = await uploadDraftPhotos(result.hotel.id, draftPhotos, (done, total) => (
+          setProgress(tx(`กำลังอัปรูป ${done}/${total}…`, `Uploading photo ${done}/${total}…`))
+        ));
+        setDraftPhotos([]);
+        navigate(`/admin/hotels/${result.hotel.id}`, { replace: true, state: { created: photos } });
       }
     } catch (err) {
       setMessage({ tone: 'error', text: err.message });
     } finally {
       setSaving(false);
+      setProgress('');
     }
   };
 
@@ -221,10 +248,26 @@ export default function HotelEditorPage() {
         <Field label={tx('ลองจิจูด', 'Longitude')}>
           <input type="number" value={form.longitude} onChange={set('longitude')} min={-180} max={180} step="any" placeholder="98.9853" className={inputClass} />
         </Field>
-        <Field label={tx('ลิงก์รูปหน้าปก', 'Cover image URL')} hint="https://…" className="sm:col-span-2">
-          <input type="url" value={form.imageUrl} onChange={set('imageUrl')} maxLength={1000} className={inputClass} />
-        </Field>
-        {form.imageUrl && <SmartImage src={form.imageUrl} alt="" width={640} className="h-40 rounded-2xl sm:col-span-2" />}
+        {/* หน้าเพิ่มโรงแรม: เลือกรูปจากเครื่องได้เลย (อัปหลังกดเพิ่มโรงแรม) · หน้าแก้ไขมีส่วน "รูปโรงแรม" แยกด้านล่างฟอร์ม */}
+        {!hotel && (
+          <div className="sm:col-span-2">
+            <HotelPhotoDraft photos={draftPhotos} onChange={setDraftPhotos} onBusyChange={setPhotoBusy} disabled={saving} />
+          </div>
+        )}
+        {/* ลิงก์รูปจากเว็บอื่น = ทางเลือกสำรอง (ข้อมูลตัวอย่างใช้แบบนี้) — พับไว้ ไม่ให้สับสนกับการอัปรูป */}
+        <details className="sm:col-span-2">
+          <summary className="cursor-pointer select-none text-xs font-bold text-slate-600 hover:text-slate-900">
+            {tx('ใช้ลิงก์รูปจากเว็บแทน (ไม่บังคับ)', 'Use an image link instead (optional)')}
+            {form.imageUrl && <span className="font-semibold text-emerald-700"> · {tx('ใส่ลิงก์ไว้แล้ว', 'link set')}</span>}
+          </summary>
+          <div className="mt-2 space-y-2">
+            <input type="url" value={form.imageUrl} onChange={set('imageUrl')} maxLength={1000} placeholder="https://…" aria-label={tx('ลิงก์รูป', 'Image link')} className={inputClass} />
+            <p className="text-xs text-slate-400">
+              {tx('ลูกค้าเห็นรูปจากลิงก์นี้เฉพาะตอนที่ยังไม่มีรูปอัปโหลด — มีรูปอัปโหลดแล้วจะใช้รูปที่อัปแทน', 'Guests only see this image while no photos are uploaded — uploaded photos take its place')}
+            </p>
+            {form.imageUrl && <SmartImage src={form.imageUrl} alt="" width={640} className="h-40 rounded-2xl" />}
+          </div>
+        </details>
         <Field label={tx('คำอธิบาย', 'Description')} hint={tx('เขียนวิว บรรยากาศ จุดเด่น — ผู้ช่วยแนะนำที่พักค้นจากข้อความนี้', 'Describe views, atmosphere and highlights — the assistant searches this text')} className="sm:col-span-2">
           <textarea value={form.description} onChange={set('description')} maxLength={2000} rows={4} className={inputClass} />
         </Field>
@@ -257,11 +300,13 @@ export default function HotelEditorPage() {
               <Icon name="trash" className="h-4 w-4" />{tx('ลบโรงแรม', 'Delete hotel')}
             </button>
           ) : <span />}
-          <button type="submit" disabled={saving} className={buttonPrimary}>
-            {saving ? tx('กำลังบันทึก…', 'Saving…') : hotel ? tx('บันทึกการแก้ไข', 'Save changes') : tx('เพิ่มโรงแรม', 'Create hotel')}
+          <button type="submit" disabled={saving || photoBusy} className={buttonPrimary}>
+            {saving ? progress || tx('กำลังบันทึก…', 'Saving…') : hotel ? tx('บันทึกการแก้ไข', 'Save changes') : tx('เพิ่มโรงแรม', 'Create hotel')}
           </button>
         </div>
       </form>
+
+      {hotel && <HotelPhotos hotelId={hotel.id} />}
 
       {hotel && (
         <section className="mt-8">

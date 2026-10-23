@@ -2,6 +2,7 @@
 import { Router } from 'express';
 import { pool } from '../../db.js';
 import { ACTIVE_BOOKING_SQL } from '../../lib/availability.js';
+import { hotelCoverSql } from '../../lib/hotelImages.js';
 import { logAction } from './audit.js';
 import { httpError, isAdmin, loadHotel, ownedBy, readId, withTransaction } from './scope.js';
 import { changedFields, readHotel } from './validate.js';
@@ -80,7 +81,8 @@ router.get('/', async (req, res, next) => {
       search = `AND (p.name ILIKE $${params.length} OR p.city ILIKE $${params.length})`;
     }
     const { rows } = await pool.query(
-      `SELECT p.*, o.owner_name, o.owner_email, rm.room_types, rm.total_rooms, bk.upcoming, rv.avg_rating, rv.review_count
+      `SELECT p.*, ${hotelCoverSql('p')} AS cover_url,
+              o.owner_name, o.owner_email, rm.room_types, rm.total_rooms, bk.upcoming, rv.avg_rating, rv.review_count
          FROM properties p
          LEFT JOIN LATERAL (
            SELECT TRIM(first_name || ' ' || last_name) AS owner_name, email AS owner_email FROM users WHERE user_id = p.owner_id
@@ -105,6 +107,7 @@ router.get('/', async (req, res, next) => {
     res.json({
       hotels: rows.map((row) => ({
         ...serializeHotelRow(row),
+        coverUrl: row.cover_url, // รูปปก (รูปอัปโหลดลำดับแรก หรือลิงก์รูปเดิม)
         roomTypes: row.room_types,
         totalRooms: row.total_rooms,
         upcomingBookings: row.upcoming,

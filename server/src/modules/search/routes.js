@@ -7,6 +7,7 @@ import {
   AMENITY_KEYS, PROPERTY_TYPES, SORTS, parseList, searchHotels, serializeHotel,
 } from '../../lib/hotelSearch.js';
 import { FEATURES, FEATURE_KEYS } from '../../lib/hotelFeatures.js';
+import { hotelImageUrl } from '../../lib/hotelImages.js';
 import { LANDMARK_BY_KEY } from '../../lib/landmarks.js';
 
 const router = Router();
@@ -132,6 +133,21 @@ router.get('/', async (req, res, next) => {
 // GET /api/hotels/:id?checkIn=&checkOut=&guests=&rooms=
 // ข้อมูลโรงแรม + ทุกประเภทห้อง พร้อมห้องว่างและราคารวมของช่วงวันที่เลือก
 // ---------------------------------------------------------------------------
+// GET /api/hotels/images/:imageId — ไฟล์รูปโรงแรมที่เจ้าของอัปโหลด (สาธารณะเหมือนหน้าโรงแรม)
+//   รูปไม่เคยถูกแก้ทับ (อัปใหม่ = id ใหม่) → ให้เบราว์เซอร์เก็บ cache ได้ 1 ปี ไม่ต้องโหลดซ้ำทุกครั้งที่เปิดหน้า
+router.get('/images/:imageId', async (req, res, next) => {
+  try {
+    const imageId = Number(req.params.imageId);
+    if (!Number.isInteger(imageId) || imageId <= 0 || imageId > 2_147_483_647) throw httpError(400, 'รหัสรูปไม่ถูกต้อง');
+    const { rows: [image] } = await pool.query('SELECT mime_type, data FROM property_images WHERE image_id = $1', [imageId]);
+    if (!image) throw httpError(404, 'ไม่พบรูปนี้');
+    res.set({ 'Content-Type': image.mime_type, 'Cache-Control': 'public, max-age=31536000, immutable' });
+    res.send(image.data);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/:id', async (req, res, next) => {
   try {
     const hotelId = Number(req.params.id);
@@ -166,8 +182,19 @@ router.get('/:id', async (req, res, next) => {
       [hotelId, stay.checkIn, stay.checkOut]
     );
 
+    // รูปที่เจ้าของอัปโหลด เรียงตามลำดับ (ตัวแรก = รูปปก) · ยังไม่มีรูปอัปโหลด → ใช้ลิงก์รูปเดิม 1 รูป
+    const { rows: imageRows } = await pool.query(
+      'SELECT image_id FROM property_images WHERE property_id = $1 ORDER BY position',
+      [hotelId]
+    );
+    const images = imageRows.length
+      ? imageRows.map((row) => hotelImageUrl(row.image_id))
+      : [hotel.image_url].filter(Boolean);
+
     res.json({
       ...serializeHotel(hotel),
+      imageUrl: images[0] ?? null,
+      images,
       description: hotel.description,
       latitude: hotel.latitude === null ? null : Number(hotel.latitude),
       longitude: hotel.longitude === null ? null : Number(hotel.longitude),

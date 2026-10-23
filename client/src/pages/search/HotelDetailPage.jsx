@@ -5,6 +5,7 @@ import Icon from '../../components/Icon.jsx';
 import Stars from '../../components/Stars.jsx';
 import RatingBadge from '../../components/RatingBadge.jsx';
 import FavoriteButton from '../../components/FavoriteButton.jsx';
+import PhotoLightbox from '../../components/PhotoLightbox.jsx';
 import SmartImage from '../../components/SmartImage.jsx';
 import DatePicker from '../../components/DatePicker.jsx';
 import GuestPicker from '../../components/GuestPicker.jsx';
@@ -339,6 +340,7 @@ export default function HotelDetailPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [pickSignal, setPickSignal] = useState(0);
+  const [viewer, setViewer] = useState(null); // ลำดับรูปที่เปิดดูเต็มจอ (null = ปิด)
 
   // รองรับทั้ง checkIn/checkOut และ checkin/checkout (ลิงก์เก่า) + guests แบบรวม
   const checkIn = [params.get('checkIn'), params.get('checkin')].find(isISODate) || '';
@@ -400,7 +402,11 @@ export default function HotelDetailPage() {
   const nights = hotel.nights || 0;
   const bookable = hotel.rooms.filter((room) => room.fitsGuests && room.enoughRooms !== false);
   const cheapest = bookable.length ? Math.min(...bookable.map((room) => room.nightlyPrice)) : null;
-  const gallery = [hotel.imageUrl, ...new Set(hotel.rooms.map((room) => room.imageUrl))].filter(Boolean).slice(0, 5);
+  // รูปที่เจ้าของอัปโหลด (สูงสุด 5 รูป ขนาด 1200×800 เท่ากันทุกรูป) · ยังไม่มี → ใช้รูปเดิม + รูปประเภทห้อง
+  const uploadedPhotos = (hotel.images ?? []).filter((src) => src.startsWith('/api/hotels/images/'));
+  const gallery = uploadedPhotos.length
+    ? uploadedPhotos
+    : [hotel.imageUrl, ...new Set(hotel.rooms.map((room) => room.imageUrl))].filter(Boolean).slice(0, 5);
   const hasMap = hotel.latitude !== null && hotel.longitude !== null;
   const bbox = hasMap ? [hotel.longitude - 0.01, hotel.latitude - 0.006, hotel.longitude + 0.01, hotel.latitude + 0.006].join(',') : '';
 
@@ -436,19 +442,42 @@ export default function HotelDetailPage() {
         </div>
       </header>
 
-      {/* แกลเลอรี: รูปแรกใหญ่ 2×2 รูปที่เหลือเติมช่องด้านขวาให้เต็มพอดีตามจำนวนรูปที่มี */}
-      <div className="mt-6 grid h-72 grid-cols-4 grid-rows-2 gap-2 overflow-hidden rounded-3xl sm:h-[26rem]">
-        {gallery.map((src, index) => (
-          <SmartImage
-            key={src}
-            src={src}
-            alt={hotel.name}
-            width={index === 0 ? 1400 : 600}
-            className={galleryTile(index, gallery.length)}
-            imgClassName="transition duration-700 hover:scale-105"
-          />
-        ))}
+      {/* แกลเลอรี: รูปแรกใหญ่ 2×2 รูปที่เหลือเติมช่องด้านขวาให้เต็มพอดีตามจำนวนรูปที่มี · กดรูปเพื่อดูเต็มจอ */}
+      <div className="relative mt-6">
+        {/* มือถือ: กรอบสัดส่วน 3:2 เท่ารูปที่อัปโหลด → เห็นรูปเต็มไม่ถูกตัด · จอใหญ่: สูงคงที่ให้ตาราง 4×2 */}
+        <div className="grid aspect-[3/2] grid-cols-4 grid-rows-2 gap-2 overflow-hidden rounded-3xl sm:aspect-auto sm:h-[26rem]">
+          {gallery.map((src, index) => (
+            <button
+              key={src}
+              type="button"
+              onClick={() => setViewer(index)}
+              aria-label={tx(`ดูรูปที่ ${index + 1} เต็มจอ`, `View photo ${index + 1}`)}
+              className={`${galleryTile(index, gallery.length)} overflow-hidden`}
+            >
+              <SmartImage
+                src={src}
+                alt={hotel.name}
+                width={index === 0 ? 1400 : 600}
+                className="h-full w-full"
+                imgClassName="transition duration-700 hover:scale-105"
+              />
+            </button>
+          ))}
+        </div>
+        {/* มือถือเห็นแค่รูปแรก → ปุ่มนี้คือทางดูรูปที่เหลือ */}
+        {gallery.length > 1 && (
+          <button
+            type="button"
+            onClick={() => setViewer(0)}
+            className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-xl bg-white/95 px-3 py-2 text-sm font-bold text-slate-800 shadow-lg backdrop-blur transition hover:bg-white"
+          >
+            <Icon name="grid" className="h-4 w-4" />{tx(`ดูรูปทั้งหมด ${gallery.length} รูป`, `Show all ${gallery.length} photos`)}
+          </button>
+        )}
       </div>
+      {viewer !== null && (
+        <PhotoLightbox photos={gallery} index={viewer} onIndex={setViewer} onClose={() => setViewer(null)} alt={hotel.name} />
+      )}
 
       {/* มือถือ: กล่องเลือกวันขึ้นก่อนเนื้อหา · จอใหญ่: อยู่คอลัมน์ขวาแบบ sticky */}
       <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_22rem]">

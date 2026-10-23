@@ -62,7 +62,7 @@ export default function HotelsPage() {
         <ul className="grid gap-3">
           {data.hotels.map((hotel) => (
             <li key={hotel.id} className={`${card} flex flex-col overflow-hidden sm:flex-row`}>
-              <SmartImage src={hotel.imageUrl} alt={hotel.name} width={320} className="h-36 sm:h-auto sm:w-44 sm:shrink-0" />
+              <SmartImage src={hotel.coverUrl ?? hotel.imageUrl} alt={hotel.name} width={320} className="h-36 sm:h-auto sm:w-44 sm:shrink-0" />
               <div className="flex min-w-0 flex-1 flex-col gap-3 p-4 sm:flex-row sm:items-center">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">

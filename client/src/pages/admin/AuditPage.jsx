@@ -24,6 +24,9 @@ function describe(log, tx, lang) {
     case 'hotel.create': return { title: tx(`เพิ่มโรงแรม #${log.entityId}`, `Created hotel #${log.entityId}`) };
     case 'hotel.update': return { title: tx(`แก้ข้อมูลโรงแรม #${log.entityId}`, `Edited hotel #${log.entityId}`), detail: fields && tx(`ฟิลด์: ${fields}`, `Fields: ${fields}`) };
     case 'hotel.delete': return { title: tx(`ลบโรงแรม #${log.entityId}`, `Deleted hotel #${log.entityId}`), detail: d.name };
+    case 'hotel.image_add': return { title: tx(`เพิ่มรูปโรงแรม #${log.entityId}`, `Added a photo to hotel #${log.entityId}`), detail: d.position && tx(`ลำดับที่ ${d.position} · ${Math.round(d.bytes / 1024)} KB`, `Position ${d.position} · ${Math.round(d.bytes / 1024)} KB`) };
+    case 'hotel.image_reorder': return { title: tx(`เรียงรูปโรงแรม #${log.entityId} ใหม่`, `Reordered photos of hotel #${log.entityId}`) };
+    case 'hotel.image_delete': return { title: tx(`ลบรูปโรงแรม #${log.entityId}`, `Deleted a photo of hotel #${log.entityId}`) };
     case 'room.create': return { title: tx(`เพิ่มประเภทห้อง #${log.entityId}`, `Created room type #${log.entityId}`), detail: tx(`โรงแรม #${d.hotelId}`, `Hotel #${d.hotelId}`) };
     case 'room.update': return { title: tx(`แก้ประเภทห้อง #${log.entityId}`, `Edited room type #${log.entityId}`), detail: fields && tx(`ฟิลด์: ${fields}`, `Fields: ${fields}`) };
     case 'room.delete': return { title: tx(`ลบประเภทห้อง #${log.entityId}`, `Deleted room type #${log.entityId}`), detail: d.name };
