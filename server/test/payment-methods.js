@@ -2,6 +2,7 @@
 // ทดสอบวิธีชำระเงิน (จำลอง) — บัตร · PromptPay · TrueMoney Wallet (ต้องเปิด server ก่อน: npm run dev)
 // รัน: node server/test/payment-methods.js
 //   - บัตรทดสอบ 4242… ผ่าน (เก็บแค่ 4 หลักท้าย) · PromptPay ผ่าน · วิธีที่ไม่รองรับ 400
+//   - รับเฉพาะบัตรทดสอบ: เลขบัตรอื่นที่ถูกต้องตาม Luhn (อาจเป็นบัตรจริง) → 400 · Mastercard ทดสอบ 5555…4444 ผ่าน
 //   - TrueMoney: เบอร์ผิดรูปแบบ 400 (นับเป็นการจ่ายไม่สำเร็จ) · เบอร์ทดสอบ 080-000-0000 = ยอดเงินไม่พอ 402 · เบอร์ปกติผ่าน
 //   - รายการชำระเงินของ TrueMoney ไม่เก็บเบอร์วอลเล็ต (PDPA)
 //   - ถ้า server ตั้ง OMISE_SECRET_KEY (Opn โหมดทดสอบ): TrueMoney ได้ลิงก์ไปยืนยันที่ Opn · กดจ่ายซ้ำได้ลิงก์เดิม ·
@@ -102,6 +103,13 @@ try {
   const otherBooking = await book(6);
   const unknown = await pay(otherBooking, { method: 'bitcoin' });
   ok(unknown.status === 400, 'วิธีชำระที่ไม่รองรับ → 400', String(unknown.status));
+  const testCard = { method: 'card', cardName: 'TEST', expiry: '12/30', cvc: '123' };
+  const notTestCard = await pay(otherBooking, { ...testCard, cardNumber: '4111111111111111' });
+  ok(notTestCard.status === 400 && /บัตรทดสอบ/.test(notTestCard.data?.message),
+    'เลขบัตรที่ถูกต้องตาม Luhn แต่ไม่ใช่บัตรทดสอบ → 400 ไม่รับ', notTestCard.data?.message);
+  const mastercard = await pay(otherBooking, { ...testCard, cardNumber: '5555 5555 5555 4444' });
+  ok(mastercard.status === 200 && mastercard.data.booking.payment?.cardLast4 === '4444',
+    'บัตรทดสอบ Mastercard 5555…4444 ผ่าน', JSON.stringify(mastercard.data));
 } catch (error) {
   failed += 1;
   console.error('ERROR', error.message);

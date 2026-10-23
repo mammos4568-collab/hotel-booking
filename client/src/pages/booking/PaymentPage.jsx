@@ -22,6 +22,14 @@ function passesLuhn(digits) {
   return digits.length >= 13 && sum % 10 === 0;
 }
 
+// การจ่ายด้วยบัตรเป็นการจำลอง → รับเฉพาะบัตรทดสอบ (ต้องตรงกับ TEST_CARDS ใน server/src/modules/booking/routes.js)
+// เลขอื่นถูกปฏิเสธที่หน้าเว็บ "ก่อนส่ง" → ถ้ามีคนเผลอพิมพ์บัตรจริง เลขบัตรจะไม่ออกจากเบราว์เซอร์เลย
+const TEST_CARDS = [
+  { number: '4242424242424242', success: true },
+  { number: '5555555555554444', success: true },
+  { number: '4000000000000002', success: false },
+];
+
 function cardBrand(digits) {
   if (/^4/.test(digits)) return 'VISA';
   if (/^(5[1-5]|2[2-7])/.test(digits)) return 'Mastercard';
@@ -150,12 +158,19 @@ export default function PaymentPage() {
   const secondsLeft = useCountdown(booking?.holdExpiresAt);
   const digits = card.number.replace(/\s/g, '');
 
+  const isTestCard = TEST_CARDS.some((testCard) => testCard.number === digits);
+  // พิมพ์เลขครบ 16 หลักที่ไม่ใช่บัตรทดสอบ (อาจเป็นบัตรจริง) → เตือนทันที ไม่ต้องรอกดจ่าย
+  const notTestCard = digits.length >= 16 && passesLuhn(digits) && !isTestCard;
+
   const cardErrors = {
-    number: !passesLuhn(digits) ? tx('หมายเลขบัตรไม่ถูกต้อง', 'Invalid card number') : '',
+    number: !passesLuhn(digits)
+      ? tx('หมายเลขบัตรไม่ถูกต้อง', 'Invalid card number')
+      : !isTestCard ? tx('ใช้ได้เฉพาะบัตรทดสอบด้านล่าง — ห้ามใส่บัตรจริง', 'Test cards only (listed below) — never enter a real card') : '',
     name: !card.name.trim() ? tx('กรอกชื่อบนบัตร', 'Enter the name on card') : '',
     expiry: !/^\d{2}\/\d{2}$/.test(card.expiry) || Number(card.expiry.slice(0, 2)) < 1 || Number(card.expiry.slice(0, 2)) > 12 ? tx('รูปแบบ MM/YY', 'Use MM/YY') : '',
     cvc: !/^\d{3,4}$/.test(card.cvc) ? tx('CVC 3–4 หลัก', '3–4 digits') : '',
   };
+  const showCardError = (name) => (touched || (name === 'number' && notTestCard)) && cardErrors[name];
   const walletDigits = walletPhone.replace(/\D/g, '');
   const walletError = /^0[689]\d{8}$/.test(walletDigits) ? '' : tx('เบอร์มือถือ 10 หลัก ขึ้นต้นด้วย 06, 08 หรือ 09', 'A 10-digit mobile number starting with 06, 08 or 09');
 
@@ -225,7 +240,7 @@ export default function PaymentPage() {
   const seconds = String((secondsLeft ?? 0) % 60).padStart(2, '0');
   const urgent = secondsLeft !== null && secondsLeft < 120;
   const input = (name) => `mt-1.5 w-full rounded-xl border bg-white px-3.5 py-2.5 text-sm outline-none transition focus:ring-4 ${
-    touched && cardErrors[name] ? 'border-rose-400 focus:ring-rose-100' : 'border-slate-300 focus:border-brand-500 focus:ring-brand-100'
+    showCardError(name) ? 'border-rose-400 focus:ring-rose-100' : 'border-slate-300 focus:border-brand-500 focus:ring-brand-100'
   }`;
 
   return (
@@ -271,32 +286,47 @@ export default function PaymentPage() {
 
           {method === 'card' ? (
             <form onSubmit={pay} noValidate className="grid gap-6 rounded-3xl border border-slate-200 bg-white p-5 sm:p-6 md:grid-cols-[1fr_16rem]">
+              {/* autoComplete="off" ทุกช่อง — ไม่ให้เบราว์เซอร์เสนอเติมบัตรจริงที่ผู้ใช้บันทึกไว้ลงฟอร์มจำลองนี้ */}
               <div className="space-y-4">
                 <label className="block text-sm font-semibold text-slate-700">
                   {tx('หมายเลขบัตร', 'Card number')}
-                  <input inputMode="numeric" autoComplete="cc-number" value={card.number} onChange={(e) => setCard({ ...card, number: formatCardNumber(e.target.value) })} placeholder="4242 4242 4242 4242" className={`${input('number')} font-mono tracking-wider`} />
-                  {touched && cardErrors.number && <span className="mt-1 block text-xs text-rose-600">{cardErrors.number}</span>}
+                  <input inputMode="numeric" autoComplete="off" value={card.number} onChange={(e) => setCard({ ...card, number: formatCardNumber(e.target.value) })} placeholder="4242 4242 4242 4242" className={`${input('number')} font-mono tracking-wider`} />
+                  {showCardError('number') && <span className="mt-1 block text-xs text-rose-600">{cardErrors.number}</span>}
                 </label>
                 <label className="block text-sm font-semibold text-slate-700">
                   {tx('ชื่อบนบัตร', 'Name on card')}
-                  <input autoComplete="cc-name" value={card.name} onChange={(e) => setCard({ ...card, name: e.target.value.toUpperCase() })} placeholder="SOMCHAI JAIDEE" className={input('name')} />
+                  <input autoComplete="off" value={card.name} onChange={(e) => setCard({ ...card, name: e.target.value.toUpperCase() })} placeholder="SOMCHAI JAIDEE" className={input('name')} />
                   {touched && cardErrors.name && <span className="mt-1 block text-xs text-rose-600">{cardErrors.name}</span>}
                 </label>
                 <div className="grid grid-cols-2 gap-4">
                   <label className="block text-sm font-semibold text-slate-700">
                     {tx('วันหมดอายุ', 'Expiry')}
-                    <input inputMode="numeric" autoComplete="cc-exp" value={card.expiry} onChange={(e) => setCard({ ...card, expiry: formatExpiry(e.target.value) })} placeholder="MM/YY" className={input('expiry')} />
+                    <input inputMode="numeric" autoComplete="off" value={card.expiry} onChange={(e) => setCard({ ...card, expiry: formatExpiry(e.target.value) })} placeholder="MM/YY" className={input('expiry')} />
                     {touched && cardErrors.expiry && <span className="mt-1 block text-xs text-rose-600">{cardErrors.expiry}</span>}
                   </label>
                   <label className="block text-sm font-semibold text-slate-700">
                     CVC
-                    <input inputMode="numeric" autoComplete="cc-csc" type="password" maxLength={4} value={card.cvc} onChange={(e) => setCard({ ...card, cvc: e.target.value.replace(/\D/g, '') })} placeholder="•••" className={input('cvc')} />
+                    <input inputMode="numeric" autoComplete="off" type="password" maxLength={4} value={card.cvc} onChange={(e) => setCard({ ...card, cvc: e.target.value.replace(/\D/g, '') })} placeholder="•••" className={input('cvc')} />
                     {touched && cardErrors.cvc && <span className="mt-1 block text-xs text-rose-600">{cardErrors.cvc}</span>}
                   </label>
                 </div>
-                <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                  {tx('บัตรทดสอบ', 'Test cards')}: <b className="font-mono text-slate-700">4242 4242 4242 4242</b> {tx('(ผ่าน)', '(success)')} · <b className="font-mono text-slate-700">4000 0000 0000 0002</b> {tx('(ถูกปฏิเสธ)', '(declined)')}
-                </p>
+                <div className="rounded-xl bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+                  <p className="font-semibold">{tx('ระบบชำระเงินจำลอง — ใช้ได้เฉพาะบัตรทดสอบ ห้ามใส่บัตรจริง', 'Simulated payment — test cards only, never enter a real card')}</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {TEST_CARDS.map((testCard) => (
+                      <button
+                        key={testCard.number}
+                        type="button"
+                        onClick={() => setCard({ ...card, number: formatCardNumber(testCard.number) })}
+                        className="whitespace-nowrap rounded-lg bg-white px-2 py-1 text-left ring-1 ring-amber-200 transition hover:ring-amber-400"
+                      >
+                        <span className="font-mono text-slate-800">{formatCardNumber(testCard.number)}</span>{' '}
+                        <span className={testCard.success ? 'text-emerald-700' : 'text-rose-600'}>{testCard.success ? tx('ผ่าน', 'success') : tx('ถูกปฏิเสธ', 'declined')}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-amber-800">{tx('กดเลขบัตรเพื่อกรอก · วันหมดอายุอะไรก็ได้ที่ยังไม่หมด · CVC 3 หลักอะไรก็ได้', 'Tap a number to fill it in · any future expiry · any 3-digit CVC')}</p>
+                </div>
                 <p className="flex items-center gap-1.5 text-xs text-slate-500">
                   <Icon name="shield" className="h-3.5 w-3.5 text-emerald-600" />
                   {tx('เราเก็บเฉพาะเลข 4 หลักท้ายของบัตร ไม่เก็บเลขบัตรเต็ม วันหมดอายุ หรือ CVC', 'We keep only the last 4 digits — never the full card number, expiry or CVC.')}

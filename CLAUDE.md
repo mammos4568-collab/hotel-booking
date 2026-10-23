@@ -112,6 +112,8 @@ node --env-file=server/.env server/scripts/set-role.js <email> admin   # ตั�
 - ชำระเงินจริงผ่าน Opn Payments (ตั้ง `OMISE_SECRET_KEY` = เปิด · ตอนนี้เฉพาะ TrueMoney): สถานะ "จ่ายแล้ว" ต้องมาจากการ
   ดึงรายการจาก Opn ด้วย secret key เท่านั้น (`retrieveCharge`) ห้ามเชื่อ query string หรือข้อมูลใน webhook ·
   อัปเดตผลผ่าน `applyGatewayCharge()` ใน transaction ที่ล็อกแถวการจองเสมอ · ยกเลิก = คืนเงินที่ Opn ก่อนแก้ DB — ดู `docs/booking.md` ข้อ 12
+- จ่ายด้วยบัตร (จำลอง) รับเฉพาะบัตรทดสอบ — รายการ `TEST_CARDS` มี 2 ที่ต้องตรงกัน: `modules/booking/routes.js` (ตรวจซ้ำ)
+  และ `pages/booking/PaymentPage.jsx` (บล็อกก่อนส่ง → เลขบัตรจริงไม่ออกจากเบราว์เซอร์)
 
 ---
 

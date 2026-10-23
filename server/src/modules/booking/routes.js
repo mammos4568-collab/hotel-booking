@@ -265,7 +265,13 @@ router.get('/:id', requireAuth, async (req, res, next) => {
 //         - ไม่ได้ตั้ง → แบบจำลอง: ตรวจรูปแบบเบอร์ แล้วถือว่าจ่ายแล้ว
 // ---------------------------------------------------------------------------
 
-// เลขบัตรทดสอบที่ระบบจะ "ปฏิเสธ" (ไว้โชว์กรณีจ่ายไม่ผ่าน) — บัตรอื่นที่ถูกต้องตาม Luhn ผ่านหมด
+// การจ่ายด้วยบัตรเป็นการจำลอง → รับเฉพาะเลขบัตรทดสอบเหล่านี้ เลขอื่น (เช่น บัตรจริงที่คนเผลอพิมพ์บนเว็บสาธิต) ปฏิเสธหมด
+// หน้าเว็บตรวจก่อนส่งอยู่แล้ว (PaymentPage.jsx ต้องมีรายการตรงกัน) — ที่นี่ตรวจซ้ำเผื่อมีคนยิง API เอง
+const TEST_CARDS = new Set([
+  '4242424242424242', // Visa — ผ่าน
+  '5555555555554444', // Mastercard — ผ่าน
+  '4000000000000002', // Visa — ธนาคารปฏิเสธ (ไว้โชว์กรณีจ่ายไม่ผ่าน)
+]);
 const DECLINED_TEST_CARD = '4000000000000002';
 // เบอร์ทดสอบของ TrueMoney Wallet ที่จำลองว่า "ยอดเงินในวอลเล็ทไม่พอ" — เบอร์มือถืออื่นที่ถูกรูปแบบผ่านหมด
 const DECLINED_TEST_WALLET = '0800000000';
@@ -299,6 +305,7 @@ function validatePayment(body) {
 
   const digits = String(body.cardNumber ?? '').replace(/[\s-]/g, '');
   if (!/^\d{13,19}$/.test(digits) || !passesLuhn(digits)) throw httpError(400, 'หมายเลขบัตรไม่ถูกต้อง');
+  if (!TEST_CARDS.has(digits)) throw httpError(400, 'เว็บนี้จำลองการชำระเงิน ใช้ได้เฉพาะบัตรทดสอบ เช่น 4242 4242 4242 4242 — ห้ามใส่บัตรจริง');
   if (!String(body.cardName ?? '').trim()) throw httpError(400, 'กรุณากรอกชื่อบนบัตร');
   if (!/^\d{3,4}$/.test(String(body.cvc ?? ''))) throw httpError(400, 'รหัส CVC ไม่ถูกต้อง');
 
@@ -435,10 +442,11 @@ async function startTrueMoneyCharge(client, row) {
 async function recordFailedPayment(client, row, body) {
   const method = PAYMENT_METHODS.includes(body?.method) ? body.method : 'unknown';
   const digits = String(body?.cardNumber ?? '').replace(/\D/g, '');
+  // เก็บ 4 หลักท้ายเฉพาะบัตรทดสอบ — เลขอื่นอาจเป็นบัตรจริง ไม่เก็บอะไรจากมันเลย (PDPA: เก็บเท่าที่จำเป็น)
   await client.query(
     `INSERT INTO payments (booking_id, amount, method, card_last4, status)
      VALUES ($1, $2, $3, $4, 'Failed')`,
-    [row.booking_id, row.total_amount, method, digits.length >= 4 ? digits.slice(-4) : null]
+    [row.booking_id, row.total_amount, method, TEST_CARDS.has(digits) ? digits.slice(-4) : null]
   );
   const { rows: [{ failed }] } = await client.query(
     `SELECT COUNT(*)::int AS failed FROM payments WHERE booking_id = $1 AND status = 'Failed'`,
