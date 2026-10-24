@@ -30,8 +30,12 @@ function BookingDetail({ bookingId, onClose, onChanged }) {
   const [reason, setReason] = useState('');
   const [state, setState] = useState({ loading: false, error: '', done: '' });
   const booking = data?.booking;
-  // จ่ายด้วย PromptPay เงินจริง = โอนเข้าบัญชีตรง ระบบโอนคืนอัตโนมัติไม่ได้ → ต้องบอกให้โอนคืนเอง
-  const paidLive = booking?.payment?.method === 'promptpay_live';
+  // ระบบโอนคืนอัตโนมัติไม่ได้ → ต้องบอกให้โอนคืนเอง (server เป็นคนบอกผ่าน payment.manualRefund)
+  //   PromptPay เงินจริง = โอนเข้าบัญชีตรง ไม่ผ่าน gateway · PromptPay ผ่าน Opn = Opn คืนเงิน PromptPay ไม่ได้
+  const manualRefund = Boolean(booking?.payment?.manualRefund);
+  const manualReason = booking?.payment?.method === 'promptpay_live'
+    ? tx('จ่ายด้วย PromptPay เงินจริง', 'Paid with real PromptPay')
+    : tx('จ่ายด้วย PromptPay ผ่าน Opn', 'Paid with PromptPay via Opn');
 
   const cancel = async () => {
     setState({ loading: true, error: '', done: '' });
@@ -39,8 +43,8 @@ function BookingDetail({ bookingId, onClose, onChanged }) {
       const result = await api(`/admin/bookings/${bookingId}/cancel`, { method: 'POST', body: { reason } });
       const done = !result.refunded
         ? tx('ยกเลิกแล้ว', 'Cancelled')
-        : paidLive
-          ? tx(`ยกเลิกแล้ว — อย่าลืมโอนเงินคืน ${baht(booking.totalAmount)} เอง (จ่ายด้วย PromptPay เงินจริง)`, `Cancelled — remember to transfer ${baht(booking.totalAmount)} back yourself (real PromptPay payment)`)
+        : manualRefund
+          ? tx(`ยกเลิกแล้ว — อย่าลืมโอนเงินคืน ${baht(booking.totalAmount)} เอง (${manualReason})`, `Cancelled — remember to transfer ${baht(booking.totalAmount)} back yourself (${manualReason})`)
           : tx('ยกเลิกแล้ว และคืนเงินเต็มจำนวน', 'Cancelled and fully refunded');
       setState({ loading: false, error: '', done });
       setCancelling(false);
@@ -107,7 +111,7 @@ function BookingDetail({ bookingId, onClose, onChanged }) {
                 {booking.payments.map((payment) => (
                   <li key={payment.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
                     <span className="text-slate-700">
-                      {paymentMethodLabel(payment.method, payment.cardLast4, tx)}
+                      {paymentMethodLabel(payment.method, payment.cardLast4, tx, payment.viaGateway)}
                       <span className="ml-2 text-xs text-slate-400">{formatDateTime(payment.paidAt, lang)}</span>
                     </span>
                     <span className="flex items-center gap-2">
@@ -137,8 +141,8 @@ function BookingDetail({ bookingId, onClose, onChanged }) {
                   <Notice tone="info">
                     {booking.paymentStatus !== 'Paid'
                       ? tx('ยังไม่ได้ชำระเงิน — ห้องจะกลับมาว่างทันที', 'Not paid yet — the room is released immediately')
-                      : paidLive
-                        ? tx(`จ่ายด้วย PromptPay เงินจริง — ระบบโอนคืนอัตโนมัติไม่ได้ ต้องโอนคืน ${baht(booking.totalAmount)} เองหลังยกเลิก`, `Paid with real PromptPay — it can't be refunded automatically; transfer ${baht(booking.totalAmount)} back yourself`)
+                      : manualRefund
+                        ? tx(`${manualReason} — ระบบโอนคืนอัตโนมัติไม่ได้ ต้องโอนคืน ${baht(booking.totalAmount)} เองหลังยกเลิก`, `${manualReason} — it can't be refunded automatically; transfer ${baht(booking.totalAmount)} back yourself`)
                         : tx(`ลูกค้าชำระแล้ว — ระบบจะคืนเงิน ${baht(booking.totalAmount)} เต็มจำนวน`, `Paid — ${baht(booking.totalAmount)} will be refunded in full`)}
                   </Notice>
                   {state.error && <Notice>{state.error}</Notice>}

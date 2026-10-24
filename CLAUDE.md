@@ -64,7 +64,7 @@ node server/test/concurrent-booking.js   # ทดสอบจองพร้อ�
 node server/test/multi-room.js           # จองหลายห้อง + จองพร้อมกันแบบหลายห้อง
 node server/test/protection.js           # ทดสอบ rate limit / เพดานจองค้าง / จ่ายผิด / คำหยาบ
 node server/test/favorites.js            # รายการโปรด
-node server/test/payment-methods.js      # วิธีชำระเงิน บัตร / PromptPay / TrueMoney Wallet (จำลอง)
+node server/test/payment-methods.js      # วิธีชำระเงิน บัตร / PromptPay / TrueMoney Wallet (จำลอง · ตั้ง key Opn แล้วทดสอบผ่าน Opn + จำลองว่าลูกค้าจ่าย PromptPay)
 node server/test/promptpay.js            # PromptPay เงินจริง 19 ข้อ (ข้อความใน QR + เฉพาะ admin · ส่วน admin ต้องตั้ง PROMPTPAY_ID)
 node server/test/assistant.js            # ผู้ช่วยแนะนำที่พัก (~120 ข้อ · ส่วนตีความไม่ต้องเปิด server)
 node server/test/admin.js                # หลังบ้าน 76 ข้อ (อ่าน server/.env เอง เพื่อตั้ง admin + ล้างข้อมูลทดสอบ)
@@ -123,9 +123,13 @@ node --env-file=server/.env server/scripts/set-role.js <email> admin   # ตั�
   (ห้ามใส่ข้อมูลส่วนตัวลูกค้าใน detail) · แก้จำนวนห้อง/ปฏิทินต้องล็อกแถว `rooms` ก่อนนับการจอง (แบบเดียวกับตอนจอง)
   · **ตั้ง/ถอด admin ด้วย `server/scripts/set-role.js` เท่านั้น** — API/หน้าเว็บเปลี่ยนได้แค่ลูกค้า ↔ เจ้าของโรงแรม
   (แตะบัญชี admin = 403 · อย่าเพิ่มทางตั้ง admin ผ่านเว็บ) · กฎ "เหลือ admin ≥ 1 คน" อยู่ในสคริปต์ — ดู `docs/admin.md`
-- ชำระเงินจริงผ่าน Opn Payments (ตั้ง `OMISE_SECRET_KEY` = เปิด · ตอนนี้เฉพาะ TrueMoney): สถานะ "จ่ายแล้ว" ต้องมาจากการ
+- ชำระเงินจริงผ่าน Opn Payments (ตั้ง `OMISE_SECRET_KEY` = เปิด · TrueMoney + PromptPay): สถานะ "จ่ายแล้ว" ต้องมาจากการ
   ดึงรายการจาก Opn ด้วย secret key เท่านั้น (`retrieveCharge`) ห้ามเชื่อ query string หรือข้อมูลใน webhook ·
   อัปเดตผลผ่าน `applyGatewayCharge()` ใน transaction ที่ล็อกแถวการจองเสมอ · ยกเลิก = คืนเงินที่ Opn ก่อนแก้ DB — ดู `docs/booking.md` ข้อ 12
+  · PromptPay ผ่าน Opn: QR หมดอายุก่อนเวลาถือห้อง 1 นาที (`promptpayExpiry()`) · หน้าเว็บถามผลด้วย `POST /:id/pay/verify { method }`
+  ทุก 4 วินาที (ไม่ต้องอัปสลิป/กดยืนยัน) · **Opn คืนเงิน PromptPay ไม่ได้** → ห้ามเรียก `refundCharge` กับ PromptPay ใช้ `opnCanRefund()` /
+  `needsManualRefund()` (ยกเลิกแล้วต้องโอนคืนเอง หน้าเว็บเตือนจาก `payment.manualRefund`) · ส่ง secret key ไปเฉพาะ `https://api.omise.co`
+  (รูป QR ขอเป็น PNG · ลิงก์ดาวน์โหลดรูปไม่ต้องใช้ key → ไม่แนบ)
 - PromptPay เงินจริง (ตั้ง `PROMPTPAY_ID` = เปิด): **เฉพาะ admin กับการจองของตัวเอง** — ห้ามเปิดให้ลูกค้าทั่วไป (เว็บเป็นโรงแรมสมมติ) ·
   ข้อความใน QR สร้างที่ `lib/promptpay.js` (EMVCo + CRC) ยอดจาก server เสมอ · ธนาคารไม่แจ้งผล → admin ยืนยันเองด้วย
   `POST /:id/pay { method: "promptpay_live" }` (ผ่านล็อกแถวการจองเหมือนวิธีอื่น) · ยกเลิกแล้วต้องโอนคืนเอง — ดู `docs/booking.md` ข้อ 13

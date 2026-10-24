@@ -10,7 +10,10 @@ import { hotelCoverSql, roomCoverSql } from '../../lib/hotelImages.js';
 import { todayInBangkok, validateStay } from '../../lib/dates.js';
 import { rateLimit } from '../../lib/rateLimit.js';
 import { containsProfanity } from '../../lib/moderation.js';
-import { chargeOutcome, createTrueMoneyCharge, opnEnabled, opnTestMode, refundCharge, retrieveCharge } from '../../lib/opn.js';
+import {
+  QR_EXPIRY_BUFFER_MS, QR_MIN_SCAN_MS, chargeOutcome, createPromptPayCharge, createTrueMoneyCharge, downloadQrImage,
+  opnCanRefund, opnEnabled, opnTestMode, promptpayExpiry, refundCharge, retrieveCharge,
+} from '../../lib/opn.js';
 import { maskPromptpay, promptpayPayload, sitePromptpay } from '../../lib/promptpay.js';
 
 const router = Router();
@@ -246,13 +249,16 @@ router.post('/', requireAuth, createLimiter, async (req, res, next) => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /api/bookings/payment-config — หน้าชำระเงินใช้เลือกว่าจะแสดง TrueMoney แบบไหน
-//   'opn' = เชื่อม Opn Payments จริง (พาไปยืนยันในแอป) · 'simulated' = แบบจำลอง (กรอกเบอร์ทดสอบ)
+// GET /api/bookings/payment-config — หน้าชำระเงินใช้เลือกว่าจะแสดง TrueMoney / PromptPay แบบไหน
+//   'opn' = เชื่อม Opn Payments จริง (TrueMoney พาไปยืนยันในแอป · PromptPay แสดง QR ของ Opn แล้วตรวจเงินเข้าเอง)
+//   'simulated' = แบบจำลอง (TrueMoney กรอกเบอร์ทดสอบ · PromptPay กดยืนยันเอง)
 //   promptpayLive = ตั้ง PROMPTPAY_ID แล้ว → ผู้ดูแลระบบลองโอนเงินจริงด้วย PromptPay ได้ (ไม่บอกเบอร์ในนี้)
 // ---------------------------------------------------------------------------
 router.get('/payment-config', (req, res) => {
+  const gateway = opnEnabled() ? 'opn' : 'simulated';
   res.json({
-    truemoney: opnEnabled() ? 'opn' : 'simulated',
+    truemoney: gateway,
+    promptpay: gateway,
     testMode: !opnEnabled() || opnTestMode(),
     promptpayLive: Boolean(sitePromptpay()),
   });
@@ -302,7 +308,11 @@ router.get('/:id/promptpay-qr', requireAuth, async (req, res, next) => {
 
 // ---------------------------------------------------------------------------
 // POST /api/bookings/:id/pay — ชำระเงิน
-// body: { method: 'card', cardNumber, cardName, expiry: 'MM/YY', cvc } · { method: 'promptpay' }  (จำลอง)
+// body: { method: 'card', cardNumber, cardName, expiry: 'MM/YY', cvc }  (จำลอง)
+//       · { method: 'promptpay' }
+//         - ตั้ง OMISE_SECRET_KEY แล้ว → จ่ายผ่าน Opn: ตอบ { qr: { image, expiresAt, amount } } ให้ลูกค้าสแกน
+//           แล้วหน้าเว็บเรียก /pay/verify { method: 'promptpay' } ซ้ำๆ จน Opn บอกว่าเงินเข้า (ไม่มีใครต้องกดยืนยันเอง)
+//         - ไม่ได้ตั้ง → แบบจำลอง: กด "ฉันชำระเงินเรียบร้อยแล้ว" = จ่ายแล้ว
 //       · { method: 'promptpay_live' } = admin ยืนยันว่าได้รับเงินโอน PromptPay จริงแล้ว (ดู /:id/promptpay-qr)
 //       · { method: 'truemoney', walletPhone }
 //         - ตั้ง OMISE_SECRET_KEY แล้ว → จ่ายผ่าน Opn Payments จริง: ตอบ { redirectUrl } ให้ไปยืนยันในแอป TrueMoney
@@ -378,12 +388,17 @@ function passError(error, res, next) {
 
 const frontendUrl = (path) => new URL(path, process.env.CLIENT_URL || 'http://localhost:5173').toString();
 
-// ยอดที่ TrueMoney (Opn) รับได้ต่อครั้ง — ต่ำ/สูงกว่านี้ Opn ปฏิเสธ จึงตรวจก่อนจะได้บอกผู้ใช้ชัดๆ
-const TRUEMONEY_MIN_BAHT = 20;
-const TRUEMONEY_MAX_BAHT = 50_000;
+// วิธีที่วิ่งผ่าน Opn เมื่อตั้ง OMISE_SECRET_KEY + ยอดที่รับได้ต่อครั้ง (ต่ำ/สูงกว่านี้ Opn ปฏิเสธ จึงตรวจก่อนจะได้บอกผู้ใช้ชัดๆ)
+const GATEWAY_METHODS = {
+  truemoney: { label: 'TrueMoney', minBaht: 20, maxBaht: 50_000 },
+  promptpay: { label: 'PromptPay', minBaht: 20, maxBaht: 150_000 },
+};
+// hasOwn: method แปลกๆ อย่าง "constructor" ต้องไม่ไปเจอของใน prototype ของ object
+const isGatewayMethod = (method) => typeof method === 'string' && Object.hasOwn(GATEWAY_METHODS, method);
+const gatewayLabel = (method) => (isGatewayMethod(method) ? GATEWAY_METHODS[method].label : 'Opn');
 
 // ---------------------------------------------------------------------------
-// ผลจาก Opn → อัปเดตการจองของเรา (ใช้ทั้งตอนสร้างรายการซ้ำ, หน้ากลับจาก TrueMoney และ webhook)
+// ผลจาก Opn → อัปเดตการจองของเรา (ใช้ทั้งตอนสร้างรายการซ้ำ, หน้ากลับจาก TrueMoney, หน้า PromptPay ที่ถามผลซ้ำๆ และ webhook)
 // ต้องเรียกใน transaction ที่ 🔒 ล็อกแถวการจองแล้ว (FOR UPDATE) — หน้าเว็บกับ webhook อาจมาพร้อมกัน
 // ล็อกแล้วจะทำทีละคน คนที่สองเห็นว่า payment ไม่ใช่ 'Pending' แล้วจึงไม่บันทึก/คืนเงินซ้ำ
 // คืน { state: 'paid' | 'pending' | 'failed' | 'refunded', message?, failed? }
@@ -397,11 +412,12 @@ async function countFailedPayments(client, bookingId) {
 }
 
 async function applyGatewayCharge(client, row, payment, charge) {
+  const label = gatewayLabel(payment.method);
   // จัดการไปแล้ว (เช่น webhook มาถึงก่อนหน้าเว็บ) → ตอบผลเดิม ไม่ทำซ้ำ
   if (payment.status === 'Success') return { state: 'paid' };
   if (payment.status === 'Refunded') return { state: 'refunded', message: 'รายการนี้คืนเงินแล้ว' };
   if (payment.status === 'Failed') {
-    return { state: 'failed', message: 'ชำระเงินด้วย TrueMoney ไม่สำเร็จ', failed: await countFailedPayments(client, row.booking_id) };
+    return { state: 'failed', message: `ชำระเงินด้วย ${label} ไม่สำเร็จ`, failed: await countFailedPayments(client, row.booking_id) };
   }
 
   const outcome = chargeOutcome(charge);
@@ -424,8 +440,15 @@ async function applyGatewayCharge(client, row, payment, charge) {
   // ห้องอาจถูกคนอื่นจองไปแล้ว → คืนเงินรายการนี้ทันที แทนที่จะรับเงินแต่ไม่มีห้องให้
   const status = deriveStatus(row, todayInBangkok());
   if (status !== 'awaiting_payment') {
-    // คืนเงินไปแล้วรอบก่อน (เช่น COMMIT ไม่ผ่านหลังสั่งคืน) → ไม่สั่งคืนซ้ำ
-    if ((charge.refunded_amount ?? 0) < charge.amount) await refundCharge(charge.id, payment.amount);
+    // TrueMoney: คืนเงินที่ Opn ทันที (คืนไปแล้วรอบก่อน เช่น COMMIT ไม่ผ่านหลังสั่งคืน → ไม่สั่งคืนซ้ำ)
+    // PromptPay: Opn คืนเงินให้ไม่ได้ → บันทึกว่าคืนเงิน แล้ว log เลขการจองไว้ให้ผู้ดูแลโอนคืนเอง (ไม่มีข้อมูลส่วนตัว)
+    //   กรณีนี้เกิดยาก เพราะ QR หมดอายุก่อนเวลาถือห้อง (promptpayExpiry) — เหลือแค่ยกเลิกการจอง หรือจ่ายด้วยวิธีอื่นในอีกแท็บ
+    //   ระหว่างที่ลูกค้ากำลังสแกน
+    const refundable = opnCanRefund(payment.method);
+    if (refundable && (charge.refunded_amount ?? 0) < charge.amount) await refundCharge(charge.id, payment.amount);
+    if (!refundable) {
+      console.warn(`[${new Date().toISOString()}] Opn ${label} paid after booking ${row.booking_id} stopped awaiting payment — refund ${charge.id} manually`);
+    }
     await client.query(`UPDATE payments SET status = 'Refunded' WHERE payment_id = $1`, [payment.payment_id]);
     if (status === 'expired') {
       await client.query(
@@ -433,11 +456,14 @@ async function applyGatewayCharge(client, row, payment, charge) {
         [row.booking_id]
       );
     }
+    const refundNote = refundable
+      ? `ระบบคืนเงินรายการ ${label} นี้ให้แล้ว`
+      : `${label} คืนเงินอัตโนมัติไม่ได้ ผู้ดูแลระบบจะโอนเงินคืนให้`;
     return {
       state: 'refunded',
       message: status === 'expired'
-        ? `หมดเวลาถือห้อง (${HOLD_MINUTES} นาที) ก่อนชำระเงินสำเร็จ ระบบคืนเงินให้แล้ว กรุณาจองใหม่`
-        : 'การจองนี้ไม่ได้รอชำระเงินแล้ว ระบบคืนเงินรายการ TrueMoney นี้ให้แล้ว',
+        ? `หมดเวลาถือห้อง (${HOLD_MINUTES} นาที) ก่อนชำระเงินสำเร็จ — ${refundNote} กรุณาจองใหม่`
+        : `การจองนี้ไม่ได้รอชำระเงินแล้ว — ${refundNote}`,
     };
   }
 
@@ -446,22 +472,25 @@ async function applyGatewayCharge(client, row, payment, charge) {
   return { state: 'paid' };
 }
 
-// เริ่มจ่ายด้วย TrueMoney ผ่าน Opn → { redirectUrl } ให้หน้าเว็บพาไปยืนยันในแอป
-// ถ้ามีรายการเดิมที่ยังรอยืนยันอยู่ ใช้ลิงก์เดิม (กันกดหลายครั้งแล้วเกิดหลายรายการ = อาจโดนตัดเงินซ้ำ)
-async function startTrueMoneyCharge(client, row) {
-  if (row.total_amount < TRUEMONEY_MIN_BAHT || row.total_amount > TRUEMONEY_MAX_BAHT) {
-    throw httpError(400, `TrueMoney รับยอดต่อครั้ง ฿${TRUEMONEY_MIN_BAHT}–฿${TRUEMONEY_MAX_BAHT.toLocaleString()} กรุณาเลือกวิธีชำระอื่น`);
+// เริ่มจ่ายผ่าน Opn (method = 'truemoney' | 'promptpay') → { charge } รายการที่รอลูกค้าจ่าย · { paid: true } · { error }
+// ถ้ามีรายการเดิม "ของวิธีเดียวกัน" ที่ยังรอจ่ายอยู่ ใช้รายการเดิม (กันกดหลายครั้งแล้วเกิดหลายรายการ = อาจโดนตัดเงินซ้ำ)
+//   → TrueMoney ได้ลิงก์เดิม · PromptPay ได้ QR เดิม · สองแท็บกดพร้อมกันก็ได้รายการเดียว เพราะต้องรอล็อกแถวการจองทีละคน
+async function startGatewayCharge(client, row, method) {
+  const { label, minBaht, maxBaht } = GATEWAY_METHODS[method];
+  if (row.total_amount < minBaht || row.total_amount > maxBaht) {
+    throw httpError(400, `${label} รับยอดต่อครั้ง ฿${minBaht}–฿${maxBaht.toLocaleString()} กรุณาเลือกวิธีชำระอื่น`);
   }
   const { rows: [pending] } = await client.query(
-    `SELECT payment_id, gateway_charge_id, amount, status FROM payments
-      WHERE booking_id = $1 AND status = 'Pending' AND gateway_charge_id IS NOT NULL
+    `SELECT payment_id, method, gateway_charge_id, amount, status FROM payments
+      WHERE booking_id = $1 AND method = $2 AND status = 'Pending' AND gateway_charge_id IS NOT NULL
       ORDER BY payment_id DESC LIMIT 1 FOR UPDATE`,
-    [row.booking_id]
+    [row.booking_id, method]
   );
   if (pending) {
     const charge = await retrieveCharge(pending.gateway_charge_id);
     const result = await applyGatewayCharge(client, row, pending, charge);
-    if (result.state === 'pending' && charge.authorize_uri) return { redirectUrl: charge.authorize_uri };
+    // TrueMoney ต้องมีลิงก์ให้ไปยืนยัน · PromptPay ใช้ QR เดิมได้เลย (Opn ยังบอกว่ารอจ่าย = QR ยังไม่หมดอายุ)
+    if (result.state === 'pending' && (method !== 'truemoney' || charge.authorize_uri)) return { charge };
     if (result.state === 'paid') return { paid: true };
     // ไม่ throw ตรงนี้ — ผลของรายการเดิม (คืนเงิน/นับครั้งที่พลาด) ต้องถูก COMMIT ก่อน แล้วค่อยตอบ error
     if (result.state === 'refunded') return { error: { status: 409, message: result.message } };
@@ -471,18 +500,31 @@ async function startTrueMoneyCharge(client, row) {
     // รายการเดิมไม่สำเร็จ/หมดอายุ → สร้างรายการใหม่ด้านล่าง
   }
 
-  const charge = await createTrueMoneyCharge({
-    amount: row.total_amount,
-    bookingId: row.booking_id,
-    reference: row.booking_reference,
-    returnUri: frontendUrl(`/checkout/pay/${row.booking_id}?gateway_return=1`),
-  });
+  let charge;
+  if (method === 'promptpay') {
+    // QR ต้องหมดอายุก่อนหมดเวลาถือห้อง — เหลือเวลาไม่พอให้สแกน ก็ไม่สร้าง (ดู promptpayExpiry ใน lib/opn.js)
+    const expiresAt = promptpayExpiry(row.hold_expires_at);
+    if (!expiresAt) {
+      const minutes = (QR_EXPIRY_BUFFER_MS + QR_MIN_SCAN_MS) / 60_000;
+      return { error: { status: 409, message: `เหลือเวลาถือห้องไม่ถึง ${minutes} นาที ไม่พอให้สแกนจ่าย PromptPay กรุณาเลือกวิธีชำระอื่นหรือจองใหม่` } };
+    }
+    charge = await createPromptPayCharge({
+      amount: row.total_amount, bookingId: row.booking_id, reference: row.booking_reference, expiresAt,
+    });
+  } else {
+    charge = await createTrueMoneyCharge({
+      amount: row.total_amount,
+      bookingId: row.booking_id,
+      reference: row.booking_reference,
+      returnUri: frontendUrl(`/checkout/pay/${row.booking_id}?gateway_return=1`),
+    });
+  }
   await client.query(
     `INSERT INTO payments (booking_id, amount, method, status, gateway_charge_id)
-     VALUES ($1, $2, 'truemoney', 'Pending', $3)`,
-    [row.booking_id, row.total_amount, charge.id]
+     VALUES ($1, $2, $3, 'Pending', $4)`,
+    [row.booking_id, row.total_amount, method, charge.id]
   );
-  return { redirectUrl: charge.authorize_uri };
+  return { charge };
 }
 
 async function recordFailedPayment(client, row, body) {
@@ -533,13 +575,21 @@ router.post('/:id/pay', requireAuth, payLimiter, async (req, res, next) => {
       throw httpError(403, 'PromptPay เงินจริงใช้ได้เฉพาะผู้ดูแลระบบ');
     }
 
-    // TrueMoney + เชื่อม Opn Payments อยู่ → สร้างรายการที่ gateway แล้วส่งลูกค้าไปยืนยันในแอป
-    // (ยังไม่ถือว่าจ่าย — สถานะจ่ายแล้วมาจากการถาม Opn ตอนกลับมา หรือจาก webhook เท่านั้น)
-    if (req.body?.method === 'truemoney' && opnEnabled()) {
-      const result = await startTrueMoneyCharge(client, row);
+    // TrueMoney / PromptPay + เชื่อม Opn Payments อยู่ → สร้างรายการที่ gateway
+    //   TrueMoney ส่งลูกค้าไปยืนยันในแอป · PromptPay ส่งรูป QR ให้สแกน
+    // (ยังไม่ถือว่าจ่าย — สถานะจ่ายแล้วมาจากการถาม Opn ด้วย secret key ตอน /pay/verify หรือจาก webhook เท่านั้น)
+    if (isGatewayMethod(req.body?.method) && opnEnabled()) {
+      const { method } = req.body;
+      const result = await startGatewayCharge(client, row, method);
       await client.query('COMMIT'); // บันทึกผลของรายการเดิม (ถ้ามี) ก่อนตอบ แม้จะตอบเป็น error
       if (result.error) return next(httpError(result.error.status, result.error.message));
-      return res.json(result);
+      if (result.paid) return res.json({ paid: true });
+      if (method === 'truemoney') return res.json({ redirectUrl: result.charge.authorize_uri });
+      // PromptPay: ดาวน์โหลดรูป QR "หลัง COMMIT" — ไม่ต้องล็อกแถวการจองค้างไว้ระหว่างรอรูปจาก Opn
+      // (ดาวน์โหลดไม่สำเร็จ → 502 · กดใหม่ได้ QR ของรายการเดิม ไม่สร้างรายการซ้ำ)
+      return res.json({
+        qr: { image: await downloadQrImage(result.charge), expiresAt: result.charge.expires_at, amount: row.total_amount },
+      });
     }
 
     // ตรวจบัตร/วิธีจ่าย — ไม่ผ่านก็ "นับครั้ง" ไว้ในตาราง payments (status = 'Failed')
@@ -582,14 +632,20 @@ router.post('/:id/pay', requireAuth, payLimiter, async (req, res, next) => {
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/bookings/:id/pay/verify — กลับมาจากหน้ายืนยันของ TrueMoney → ถาม Opn ว่าจ่ายสำเร็จจริงไหม
+// POST /api/bookings/:id/pay/verify — ถาม Opn ว่ารายการจ่ายเงินของการจองนี้สำเร็จจริงไหม
+//   ใช้ 2 ที่: กลับมาจากหน้ายืนยันของ TrueMoney · หน้า PromptPay ถามซ้ำทุก 4 วินาทีระหว่างรอลูกค้าสแกน
+//   body: { method } = ตรวจรายการล่าสุดของวิธีนั้น ('truemoney' | 'promptpay') · ไม่ส่ง = รายการล่าสุดของการจองนี้
 //   ไม่เชื่อ query string ที่ติดมากับ URL (ใครก็พิมพ์เองได้) — ดึงรายการจาก Opn ด้วย secret key ของเราเท่านั้น
 //   ตอบ { state: 'paid' | 'pending', booking } · ไม่สำเร็จ 402 · ครบ 5 ครั้ง 429 · คืนเงินแล้ว 409
 // ---------------------------------------------------------------------------
-router.post('/:id/pay/verify', requireAuth, payLimiter, async (req, res, next) => {
+// แยกตัวนับจาก payLimiter — หน้า PromptPay ถามทุก 4 วินาที (15 ครั้ง/นาที) ถ้านับรวมกับการกดจ่ายจะโดน 429 กลางทาง
+const verifyLimiter = rateLimit({ windowMs: 60_000, max: 30 });
+
+router.post('/:id/pay/verify', requireAuth, verifyLimiter, async (req, res, next) => {
   const bookingId = toPositiveInt(req.params.id);
   if (!bookingId) return next(httpError(400, 'เลขการจองไม่ถูกต้อง'));
   if (!opnEnabled()) return next(httpError(400, 'ระบบนี้ยังไม่ได้เชื่อมต่อ Opn Payments'));
+  const method = isGatewayMethod(req.body?.method) ? req.body.method : null;
 
   const client = await pool.connect();
   try {
@@ -598,12 +654,12 @@ router.post('/:id/pay/verify', requireAuth, payLimiter, async (req, res, next) =
     await client.query('SELECT booking_id FROM bookings WHERE booking_id = $1 FOR UPDATE', [bookingId]);
     const row = await findOwnBooking(client, bookingId, req.user.id);
     const { rows: [payment] } = await client.query(
-      `SELECT payment_id, gateway_charge_id, amount, status FROM payments
-        WHERE booking_id = $1 AND gateway_charge_id IS NOT NULL
+      `SELECT payment_id, method, gateway_charge_id, amount, status FROM payments
+        WHERE booking_id = $1 AND gateway_charge_id IS NOT NULL AND ($2::text IS NULL OR method = $2)
         ORDER BY payment_id DESC LIMIT 1 FOR UPDATE`,
-      [bookingId]
+      [bookingId, method]
     );
-    if (!payment) throw httpError(404, 'ไม่พบรายการชำระเงินผ่าน TrueMoney ของการจองนี้');
+    if (!payment) throw httpError(404, 'ไม่พบรายการชำระเงินผ่าน Opn ของการจองนี้');
 
     const charge = payment.status === 'Pending' ? await retrieveCharge(payment.gateway_charge_id) : null;
     const result = await applyGatewayCharge(client, row, payment, charge);
@@ -628,6 +684,7 @@ router.post('/:id/pay/verify', requireAuth, payLimiter, async (req, res, next) =
 // ---------------------------------------------------------------------------
 // POST /api/bookings/gateway/webhook — Opn แจ้งว่ารายการจ่ายเงินเสร็จแล้ว (charge.complete)
 //   สำคัญตอนลูกค้าจ่ายแล้วปิดแอป/เบราว์เซอร์ไปเลย ไม่ได้กลับมาหน้าเว็บ — ไม่มี webhook = เงินถูกตัดแต่การจองไม่อัปเดต
+//   (PromptPay ยิ่งสำคัญ: ลูกค้าสแกนจ่ายในมือถือแล้วปิดหน้าเว็บบนคอมได้ทันที ไม่มีหน้าไหนถามผลให้)
 //   ไม่ต้องล็อกอิน (Opn เป็นคนเรียก) จึงใช้แค่ "รหัสรายการ" จากข้อมูลที่ส่งมา แล้วดึงสถานะจริงจาก Opn เอง
 //   → ปลอม webhook มาก็ทำอะไรไม่ได้ นอกจากทำให้ระบบไปถาม Opn ซ้ำ (มี rate limit ต่อ IP)
 //   ตั้ง URL นี้ใน dashboard ของ Opn ตอน deploy จริง (localhost รับ webhook จากอินเทอร์เน็ตไม่ได้)

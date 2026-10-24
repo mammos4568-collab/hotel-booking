@@ -129,7 +129,7 @@ export default function BookingDetailPage({ justBooked = false }) {
                   <>
                     <div className="flex justify-between gap-3">
                       <dt className="text-slate-500">{tx('วิธีชำระ', 'Method')}</dt>
-                      <dd className="font-semibold text-slate-900">{paymentMethodLabel(booking.payment.method, booking.payment.cardLast4, tx)}</dd>
+                      <dd className="font-semibold text-slate-900">{paymentMethodLabel(booking.payment.method, booking.payment.cardLast4, tx, booking.payment.viaGateway)}</dd>
                     </div>
                     <div className="flex justify-between gap-3"><dt className="text-slate-500">{tx('ชำระเมื่อ', 'Paid at')}</dt><dd className="font-semibold text-slate-900">{formatDateTime(booking.payment.paidAt, lang)}</dd></div>
                   </>
@@ -192,7 +192,10 @@ export default function BookingDetailPage({ justBooked = false }) {
           : booking.payment?.method === 'promptpay_live'
             // PromptPay เงินจริงโอนเข้าบัญชีตรง ไม่ผ่าน gateway → ระบบสั่งคืนเงินเองไม่ได้
             ? tx(`การจองนี้จ่ายด้วย PromptPay เงินจริง — ระบบโอนคืนอัตโนมัติไม่ได้ ต้องโอนคืน ${formatPrice(booking.totalAmount)} เอง และห้องจะถูกปล่อยให้ผู้อื่นจอง`, `This booking was paid with real PromptPay — it can't be refunded automatically; transfer ${formatPrice(booking.totalAmount)} back yourself. The room will be released.`)
-            : tx(`ระบบจะคืนเงิน ${formatPrice(booking.totalAmount)} ไปยังช่องทางที่ชำระ และห้องจะถูกปล่อยให้ผู้อื่นจอง`, `We'll refund ${formatPrice(booking.totalAmount)} to your original payment method and release the room.`)}
+            : booking.payment?.manualRefund
+              // PromptPay ผ่าน Opn: Opn คืนเงิน PromptPay ไม่ได้ → ผู้ดูแลระบบต้องโอนคืนเอง
+              ? tx(`การจองนี้จ่ายด้วย PromptPay ผ่าน Opn ซึ่งคืนเงินอัตโนมัติไม่ได้ — ผู้ดูแลระบบจะโอนคืน ${formatPrice(booking.totalAmount)} ให้ภายหลัง และห้องจะถูกปล่อยให้ผู้อื่นจอง`, `This booking was paid with PromptPay via Opn, which can't be refunded automatically — an admin will transfer ${formatPrice(booking.totalAmount)} back to you later. The room will be released.`)
+              : tx(`ระบบจะคืนเงิน ${formatPrice(booking.totalAmount)} ไปยังช่องทางที่ชำระ และห้องจะถูกปล่อยให้ผู้อื่นจอง`, `We'll refund ${formatPrice(booking.totalAmount)} to your original payment method and release the room.`)}
         confirmLabel={tx('ยืนยันการยกเลิก', 'Yes, cancel booking')}
         loading={cancelling}
         error={cancelError}

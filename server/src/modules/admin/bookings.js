@@ -79,7 +79,8 @@ router.get('/:id', async (req, res, next) => {
     const bookingId = readId(req.params.id, 'เลขการจอง');
     const row = await loadOwnBooking(pool, req, bookingId);
     const { rows: payments } = await pool.query(
-      `SELECT payment_id, method, card_last4, amount::float AS amount, status, paid_at
+      `SELECT payment_id, method, card_last4, amount::float AS amount, status, paid_at,
+              gateway_charge_id IS NOT NULL AS via_gateway
          FROM payments WHERE booking_id = $1 ORDER BY paid_at DESC`,
       [bookingId],
     );
@@ -88,6 +89,7 @@ router.get('/:id', async (req, res, next) => {
         ...serializeBooking(row),
         payments: payments.map((p) => ({
           id: p.payment_id, method: p.method, cardLast4: p.card_last4, amount: p.amount, status: p.status, paidAt: p.paid_at,
+          viaGateway: p.via_gateway,
         })),
       },
     });

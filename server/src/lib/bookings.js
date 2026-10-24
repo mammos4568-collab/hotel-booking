@@ -5,7 +5,7 @@
 import { HOLD_MINUTES } from './availability.js';
 import { todayInBangkok } from './dates.js';
 import { hotelCoverSql, roomCoverSql } from './hotelImages.js';
-import { refundCharge, retrieveCharge } from './opn.js';
+import { opnCanRefund, refundCharge, retrieveCharge } from './opn.js';
 
 export const BOOKING_SELECT = `
   SELECT b.booking_id, b.booking_reference, b.user_id,
@@ -17,13 +17,13 @@ export const BOOKING_SELECT = `
          b.created_at + make_interval(mins => ${HOLD_MINUTES}) AS hold_expires_at,
          p.property_id, p.name AS hotel_name, p.city, p.address, ${hotelCoverSql('p')} AS hotel_image,
          r.room_id, r.room_type_name, ${roomCoverSql('r')} AS room_image, r.bed_type, r.max_guests,
-         pay.method AS payment_method, pay.card_last4, pay.paid_at,
+         pay.method AS payment_method, pay.card_last4, pay.paid_at, pay.via_gateway AS payment_via_gateway,
          (rv.review_id IS NOT NULL) AS has_review
     FROM bookings b
     LEFT JOIN properties p ON p.property_id = b.property_id
     LEFT JOIN rooms r ON r.room_id = b.room_id
     LEFT JOIN LATERAL (
-      SELECT method, card_last4, paid_at FROM payments
+      SELECT method, card_last4, paid_at, gateway_charge_id IS NOT NULL AS via_gateway FROM payments
        WHERE booking_id = b.booking_id AND status IN ('Success', 'Refunded') ORDER BY paid_at DESC LIMIT 1
     ) pay ON TRUE
     LEFT JOIN reviews rv ON rv.booking_id = b.booking_id`;
@@ -88,7 +88,13 @@ export function serializeBooking(row) {
     createdAt: row.created_at,
     holdExpiresAt: status === 'awaiting_payment' ? row.hold_expires_at : null,
     payment: row.payment_method
-      ? { method: row.payment_method, cardLast4: row.card_last4, paidAt: row.paid_at }
+      ? {
+        method: row.payment_method,
+        cardLast4: row.card_last4,
+        paidAt: row.paid_at,
+        viaGateway: row.payment_via_gateway, // จ่ายผ่าน Opn จริง (ไม่ใช่แบบจำลอง)
+        manualRefund: needsManualRefund(row.payment_method, row.payment_via_gateway),
+      }
       : null,
     hasReview: row.has_review,
     canPay: status === 'awaiting_payment',
@@ -102,10 +108,17 @@ export async function findBooking(db, bookingId) {
   return rows[0] || null;
 }
 
+// ระบบสั่งคืนเงินเองไม่ได้ ต้องโอนคืนเอง (หน้าเว็บใช้เตือนตอนยกเลิก)
+//   promptpay_live = โอนเข้าบัญชีพร้อมเพย์ตรง ไม่ผ่าน gateway · promptpay ผ่าน Opn = Opn คืนเงิน PromptPay ไม่ได้
+export function needsManualRefund(method, viaGateway) {
+  if (method === 'promptpay_live') return true;
+  return Boolean(viaGateway) && !opnCanRefund(method);
+}
+
 // ยกเลิกการจอง (+ คืนเงินถ้าจ่ายแล้ว) — ต้องเรียกใน transaction ที่ล็อกแถวการจองไว้แล้ว (SELECT ... FOR UPDATE)
 // ใช้ทั้งลูกค้ายกเลิกเอง และหลังบ้านยกเลิกให้ (เช่น ที่พักมีปัญหา)
-// จ่ายด้วย PromptPay เงินจริง (method 'promptpay_live') → ระบบโอนคืนให้ไม่ได้ (โอนเข้าบัญชีตรง ไม่ผ่าน gateway)
-// ฐานข้อมูลบันทึกว่าคืนเงิน และหน้าเว็บเตือนให้โอนคืนเอง
+// จ่ายแบบที่ระบบคืนเงินเองไม่ได้ (needsManualRefund: PromptPay เงินจริง / PromptPay ผ่าน Opn)
+// → ฐานข้อมูลบันทึกว่าคืนเงิน และหน้าเว็บเตือนให้โอนคืนเอง
 export async function cancelBooking(client, row) {
   const wasPaid = String(row.payment_status).toLowerCase() === 'paid';
   if (wasPaid) {
@@ -113,12 +126,14 @@ export async function cancelBooking(client, row) {
     // ถ้าคืนเงินไม่สำเร็จจะ throw → ROLLBACK ทั้ง transaction การจองยังไม่ถูกยกเลิก
     // (ไม่มีทางเกิด "ยกเลิกแล้วแต่เงินไม่คืน") — ผู้ใช้ลองกดยกเลิกใหม่ได้
     const { rows: gatewayPayments } = await client.query(
-      `SELECT gateway_charge_id, amount FROM payments
+      `SELECT method, gateway_charge_id, amount FROM payments
         WHERE booking_id = $1 AND status = 'Success' AND gateway_charge_id IS NOT NULL
           FOR UPDATE`,
       [row.booking_id]
     );
     for (const payment of gatewayPayments) {
+      // PromptPay ผ่าน Opn: สั่งคืนผ่าน API ไม่ได้ (Opn จะตอบ error แล้วยกเลิกการจองไม่ได้เลย) → ข้าม ให้โอนคืนเอง
+      if (!opnCanRefund(payment.method)) continue;
       // ถาม Opn ก่อนว่าคืนไปแล้วหรือยัง (เช่น รอบก่อนสั่งคืนสำเร็จแต่ COMMIT ไม่ผ่าน) → ไม่สั่งคืนซ้ำ
       const charge = await retrieveCharge(payment.gateway_charge_id);
       if ((charge.refunded_amount ?? 0) < charge.amount) await refundCharge(payment.gateway_charge_id, payment.amount);

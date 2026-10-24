@@ -138,8 +138,8 @@ export default function PrivacyPage() {
             <Bullets
               items={[
                 tx('ข้อมูลผู้เข้าพักใช้เพื่อการเข้าพักกับที่พักที่คุณจองเท่านั้น เราไม่ขายข้อมูลส่วนบุคคลให้ใคร', 'Guest details are used only for your stay at the property you booked. We never sell personal data.'),
-                tx('จ่ายด้วย TrueMoney ผ่าน Opn Payments (ผู้ให้บริการรับชำระเงิน — ในโปรเจกต์นี้ใช้โหมดทดสอบ): เราส่งให้ Opn แค่ยอดเงินและเลขที่การจอง ส่วนการยืนยันตัวตนทำในแอป TrueMoney เราไม่ได้รับรหัสหรือข้อมูลบัญชีของคุณ',
-                  'Paying with TrueMoney via Opn Payments (our payment processor — test mode in this project): we send Opn only the amount and booking reference; you confirm the payment in the TrueMoney app, and we never receive your wallet credentials or account details.'),
+                tx('จ่ายด้วย TrueMoney หรือ PromptPay ผ่าน Opn Payments (ผู้ให้บริการรับชำระเงิน — ในโปรเจกต์นี้ใช้โหมดทดสอบ): เราส่งให้ Opn แค่ยอดเงินและเลขที่การจอง ส่วนการยืนยันทำในแอป TrueMoney หรือแอปธนาคารของคุณ เราไม่ได้รับรหัส สลิป หรือข้อมูลบัญชีของคุณ',
+                  'Paying with TrueMoney or PromptPay via Opn Payments (our payment processor — test mode in this project): we send Opn only the amount and booking reference; you confirm the payment in the TrueMoney app or your banking app, and we never receive your credentials, transfer slip or account details.'),
                 tx('เจ้าของที่พักที่คุณจอง (และผู้ดูแลระบบ) เห็นชื่อ อีเมล เบอร์โทร และคำขอพิเศษของการจองนั้น เพื่อเตรียมการเข้าพักและติดต่อคุณ — เจ้าของแต่ละรายเห็นเฉพาะการจองของที่พักตัวเอง',
                   'The property you book (and our admins) can see the guest name, email, phone and special requests of that booking to prepare your stay and contact you — each owner sees only bookings for their own property.'),
                 tx('หน้าเว็บโหลดไฟล์จากบริการภายนอก ได้แก่ ฟอนต์ (Google Fonts) รูปภาพ (Unsplash) แผนที่ (OpenStreetMap) ไอคอนธง (flagcdn) และรูปโปรไฟล์ที่มาจากบัญชี Google/GitHub (ถ้าเจ้าของยังไม่ได้อัปรูปเอง) ซึ่งจะเห็น IP address ของคุณตามปกติของการโหลดไฟล์',

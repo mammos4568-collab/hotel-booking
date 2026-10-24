@@ -5,7 +5,7 @@ import Icon from '../../components/Icon.jsx';
 import BookingSteps from '../../components/BookingSteps.jsx';
 import BookingSummary from '../../components/BookingSummary.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
-import { PageLoader } from '../../components/Loading.jsx';
+import { PageLoader, Spinner } from '../../components/Loading.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 
@@ -54,7 +54,12 @@ function formatPhone(value) {
   return [digits.slice(0, 3), digits.slice(3, 6), digits.slice(6)].filter(Boolean).join('-');
 }
 
-// นับถอยหลังเวลาถือห้อง (มาจาก holdExpiresAt ที่ server คำนวณ)
+// ยอดโอนพร้อมเพย์เป็นบาทเสมอ — ไม่แปลงตามสกุลเงินที่เลือกดู
+const formatBaht = (amount) => `฿${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const mmss = (totalSeconds) => `${String(Math.floor(totalSeconds / 60)).padStart(2, '0')}:${String(totalSeconds % 60).padStart(2, '0')}`;
+
+// นับถอยหลังเวลาถือห้อง / เวลาหมดอายุของ QR (มาจากเวลาที่ server คำนวณ)
 function useCountdown(deadline) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -109,15 +114,17 @@ export default function PaymentPage() {
   const [touched, setTouched] = useState(false);
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState('');
-  // TrueMoney จ่ายผ่าน Opn Payments จริง ('opn') หรือแบบจำลอง ('simulated') — server เป็นคนบอก
+  // TrueMoney / PromptPay จ่ายผ่าน Opn Payments จริง ('opn') หรือแบบจำลอง ('simulated') — server เป็นคนบอก
   // promptpayLive = server ตั้งหมายเลขพร้อมเพย์รับเงินจริงไว้ (ใช้ได้เฉพาะ admin — server ตรวจสิทธิ์ซ้ำทุกครั้ง)
-  const [payConfig, setPayConfig] = useState({ truemoney: 'simulated', testMode: true, promptpayLive: false });
+  const [payConfig, setPayConfig] = useState({ truemoney: 'simulated', promptpay: 'simulated', testMode: true, promptpayLive: false });
   const [liveQr, setLiveQr] = useState(null); // PromptPay เงินจริง: { qr, amount, account } | { error }
   const [liveChecked, setLiveChecked] = useState(false); // admin ติ๊กว่าตรวจแล้วว่าเงินเข้าบัญชี
+  const [gatewayQr, setGatewayQr] = useState(null); // PromptPay ผ่าน Opn: { image, expiresAt, amount } ที่ server ส่งมา
   const [searchParams, setSearchParams] = useSearchParams();
   const returnedFromGateway = searchParams.get('gateway_return') === '1';
   const [verifying, setVerifying] = useState(returnedFromGateway);
   const viaGateway = method === 'truemoney' && payConfig.truemoney === 'opn';
+  const promptpayViaGateway = method === 'promptpay' && payConfig.promptpay === 'opn';
   const canPayLive = payConfig.promptpayLive && user?.role === 'admin';
 
   useEffect(() => {
@@ -140,7 +147,7 @@ export default function PaymentPage() {
     setVerifying(true);
     const check = async (attempt) => {
       try {
-        const result = await api(`/bookings/${id}/pay/verify`, { method: 'POST' });
+        const result = await api(`/bookings/${id}/pay/verify`, { method: 'POST', body: { method: 'truemoney' } });
         if (stopped) return;
         if (result.state === 'paid') {
           navigate(`/booking/success/${id}`, { replace: true });
@@ -168,6 +175,54 @@ export default function PaymentPage() {
   }, [returnedFromGateway, id]);
 
   const secondsLeft = useCountdown(booking?.holdExpiresAt);
+  const qrSecondsLeft = useCountdown(gatewayQr?.expiresAt);
+
+  // PromptPay ผ่าน Opn: ระหว่างแสดง QR ให้ server ถาม Opn ทุก 4 วินาทีว่าเงินเข้าหรือยัง → เข้าแล้วไปหน้าสำเร็จเอง
+  // (หน้าเว็บไม่ตัดสินเอง ไม่ต้องอัปสลิป ไม่ต้องกดยืนยัน · ปิดหน้านี้ไปก่อนก็ได้ ตอน deploy จริง webhook ของ Opn อัปเดตการจองให้)
+  const waitingForScan = Boolean(gatewayQr) && method === 'promptpay' && booking?.status === 'awaiting_payment' && secondsLeft !== 0;
+  useEffect(() => {
+    if (!waitingForScan) return undefined;
+    let stopped = false;
+    let timer;
+    const check = async () => {
+      let delay = 4000;
+      try {
+        const result = await api(`/bookings/${id}/pay/verify`, { method: 'POST', body: { method: 'promptpay' } });
+        if (stopped) return;
+        if (result.state === 'paid') {
+          navigate(`/booking/success/${id}`, { replace: true });
+          return;
+        }
+      } catch (err) {
+        if (stopped) return;
+        if (err.status === 402) {
+          // QR หมดอายุ / จ่ายไม่สำเร็จ → เอา QR ออก ให้กดสร้างใหม่ได้
+          setPayError(err.message);
+          setGatewayQr(null);
+          return;
+        }
+        if (err.status === 409 || err.status === 429) {
+          // หมดเวลาถือห้อง / ถูกยกเลิก / จ่ายผิดครบจำนวน → โหลดสถานะล่าสุด หน้าจะเปลี่ยนเองและหยุดถาม
+          // (429 อาจแค่ถามถี่เกิน เช่น เปิดสองแท็บ — การจองยังรอชำระอยู่ก็ถามต่อแบบช้าลง)
+          const latest = await api(`/bookings/${id}`).then((data) => data.booking).catch(() => null);
+          if (stopped) return;
+          if (latest && latest.status !== 'awaiting_payment') {
+            setPayError(err.message);
+            setBooking(latest);
+            return;
+          }
+        }
+        delay = 10_000; // เน็ตสะดุด / Opn ตอบช้า → รอนานขึ้นแล้วถามใหม่
+      }
+      timer = setTimeout(check, delay);
+    };
+    timer = setTimeout(check, 4000);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [waitingForScan, id]);
+
   const digits = card.number.replace(/\s/g, '');
 
   const isTestCard = TEST_CARDS.some((testCard) => testCard.number === digits);
@@ -206,6 +261,11 @@ export default function PaymentPage() {
         // Opn: ไปยืนยันในแอป TrueMoney (เปลี่ยนหน้าทั้งหน้า) — ยังไม่ถือว่าจ่ายจนกว่าจะกลับมาตรวจผล
         leaving = true;
         window.location.assign(result.redirectUrl);
+        return;
+      }
+      if (result.qr) {
+        // PromptPay ผ่าน Opn: แสดง QR แล้วรอผลอัตโนมัติ (ดู waitingForScan) — ยังไม่ถือว่าจ่าย
+        setGatewayQr(result.qr);
         return;
       }
       navigate(`/booking/success/${id}`, { replace: true });
@@ -249,8 +309,6 @@ export default function PaymentPage() {
     );
   }
 
-  const minutes = String(Math.floor((secondsLeft ?? 0) / 60)).padStart(2, '0');
-  const seconds = String((secondsLeft ?? 0) % 60).padStart(2, '0');
   const urgent = secondsLeft !== null && secondsLeft < 120;
   const input = (name) => `mt-1.5 w-full rounded-xl border bg-white px-3.5 py-2.5 text-sm outline-none transition focus:ring-4 ${
     showCardError(name) ? 'border-rose-400 focus:ring-rose-100' : 'border-slate-300 focus:border-brand-500 focus:ring-brand-100'
@@ -268,7 +326,7 @@ export default function PaymentPage() {
           <div className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-sm ${urgent ? 'bg-rose-50 text-rose-800' : 'bg-amber-50 text-amber-900'}`}>
             <Icon name="clock" className="h-5 w-5 shrink-0" />
             <p className="flex-1">{tx('เราถือห้องนี้ไว้ให้คุณ กรุณาชำระเงินภายใน', "We're holding this room for you. Complete payment within")}</p>
-            <span className="rounded-lg bg-white/70 px-2.5 py-1 font-mono text-lg font-black tabular-nums">{minutes}:{seconds}</span>
+            <span className="rounded-lg bg-white/70 px-2.5 py-1 font-mono text-lg font-black tabular-nums">{mmss(secondsLeft ?? 0)}</span>
           </div>
 
           <div>
@@ -464,8 +522,7 @@ export default function PaymentPage() {
                   <img src={liveQr.qr} alt={tx('PromptPay QR สำหรับโอนเงินจริง', 'PromptPay QR for a real transfer')} className="h-56 w-56 rounded-2xl border border-slate-200" />
                   <div>
                     <p className="text-sm text-slate-500">{tx('ยอดที่ต้องโอน (บาท)', 'Amount to transfer (THB)')}</p>
-                    {/* โอนจริงต้องเป็นบาทเสมอ — ไม่แปลงตามสกุลเงินที่เลือกดู */}
-                    <p className="text-3xl font-black text-slate-900">฿{liveQr.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    <p className="text-3xl font-black text-slate-900">{formatBaht(liveQr.amount)}</p>
                     <p className="mt-1 text-xs text-slate-500">{tx(`โอนเข้าพร้อมเพย์ ${liveQr.account}`, `To PromptPay ${liveQr.account}`)}</p>
                   </div>
                   <ol className="w-full list-decimal space-y-1 rounded-2xl bg-slate-50 px-4 py-3 pl-8 text-left text-sm text-slate-600">
@@ -485,6 +542,56 @@ export default function PaymentPage() {
               <button type="button" onClick={pay} disabled={paying || !liveChecked || !liveQr?.qr} className="w-full rounded-2xl bg-brand-600 py-4 text-base font-bold text-white shadow-lg shadow-brand-600/25 hover:bg-brand-700 disabled:opacity-60">
                 {paying ? tx('กำลังบันทึก…', 'Saving…') : tx('ยืนยันว่าได้รับเงินแล้ว', 'Confirm the money has arrived')}
               </button>
+            </div>
+          ) : promptpayViaGateway ? (
+            // PromptPay ผ่าน Opn: QR ผูกกับรายการจ่ายเงินของการจองนี้รายการเดียว → Opn รู้เองว่าจ่ายแล้ว
+            // หน้านี้ถามผลผ่าน server ทุก 4 วินาที (waitingForScan) — ไม่ต้องอัปสลิป ไม่มีใครต้องกดยืนยัน
+            <div className="flex flex-col items-center gap-4 rounded-3xl border border-slate-200 bg-white p-6 text-center">
+              <span className="rounded-lg bg-brand-900 px-3 py-1 text-xs font-black tracking-widest text-white">PromptPay</span>
+              {gatewayQr ? (
+                <>
+                  {/* รูปจาก Opn เป็นโปสเตอร์ Thai QR Payment แนวตั้ง 740×1050 → ล็อกความกว้าง ปล่อยความสูงตามสัดส่วน */}
+                  <img src={gatewayQr.image} alt={tx('PromptPay QR สำหรับชำระเงิน', 'PromptPay QR for this payment')} width={740} height={1050} className="h-auto w-64 max-w-full rounded-2xl border border-slate-200" />
+                  <div>
+                    <p className="text-sm text-slate-500">{tx('ยอดที่ต้องชำระ (บาท)', 'Amount due (THB)')}</p>
+                    <p className="text-3xl font-black text-slate-900">{formatBaht(gatewayQr.amount)}</p>
+                    <p className={`mt-1 text-xs ${qrSecondsLeft === 0 ? 'font-semibold text-rose-600' : 'text-slate-500'}`}>
+                      {qrSecondsLeft === 0
+                        ? tx('QR หมดอายุแล้ว — กำลังตรวจสอบสถานะ…', 'QR expired — checking status…')
+                        : tx(`QR หมดอายุใน ${mmss(qrSecondsLeft ?? 0)}`, `QR expires in ${mmss(qrSecondsLeft ?? 0)}`)}
+                    </p>
+                  </div>
+                  <p className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800">
+                    <Spinner className="h-4 w-4 shrink-0" />
+                    {tx('รอการชำระเงิน — สแกนจ่ายแล้วหน้านี้จะเปลี่ยนเอง ไม่ต้องกดยืนยัน', 'Waiting for payment — this page updates by itself once you pay')}
+                  </p>
+                  <ol className="w-full list-decimal space-y-1 rounded-2xl bg-slate-50 px-4 py-3 pl-8 text-left text-sm text-slate-600">
+                    <li>{tx('สแกน QR ด้วยแอปธนาคาร (หรือบันทึกรูปแล้วเลือกจากแกลเลอรีในแอป)', 'Scan the QR with your banking app (or save it and pick it from your gallery)')}</li>
+                    <li>{tx('ตรวจยอดเงินให้ตรงก่อนกดโอน', 'Check the amount before you confirm')}</li>
+                    <li>{tx('โอนเสร็จ ระบบรู้เองว่าเงินเข้าแล้ว — ไม่ต้องส่งสลิป', 'Once paid, we detect it automatically — no slip needed')}</li>
+                  </ol>
+                  {payConfig.testMode && (
+                    <p className="flex items-start gap-1.5 text-left text-xs text-slate-500">
+                      <Icon name="info" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      {tx('โหมดทดสอบ: QR นี้สแกนจ่ายด้วยแอปธนาคารจริงไม่ได้ — จำลองการจ่ายที่ Dashboard ของ Opn: Charges → เลือกรายการนี้ → Actions → Mark as successful (หรือ failed) แล้วหน้านี้จะเปลี่ยนเอง', 'Test mode: this QR can’t be paid with a real banking app — in the Opn dashboard open Charges → this charge → Actions → Mark as successful (or failed), and this page updates by itself.')}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <div>
+                  <p className="text-sm text-slate-500">{tx('ยอดที่ต้องชำระ (บาท)', 'Amount due (THB)')}</p>
+                  <p className="text-3xl font-black text-slate-900">{formatBaht(booking.totalAmount)}</p>
+                  <p className="mt-2 text-sm text-slate-600">
+                    {tx('กดปุ่มด้านล่างเพื่อสร้าง QR พร้อมเพย์ของการจองนี้ สแกนจ่ายด้วยแอปธนาคาร แล้วระบบจะตรวจสอบเงินเข้าให้อัตโนมัติ', 'Press the button to get a PromptPay QR for this booking. Pay with your banking app and we’ll detect the payment automatically.')}
+                  </p>
+                </div>
+              )}
+              {payError && <p className="w-full rounded-2xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{payError}</p>}
+              {!gatewayQr && (
+                <button type="button" onClick={pay} disabled={paying} className="w-full rounded-2xl bg-brand-600 py-4 text-base font-bold text-white shadow-lg shadow-brand-600/25 hover:bg-brand-700 disabled:opacity-60">
+                  {paying ? tx('กำลังสร้าง QR…', 'Creating QR…') : tx(`สร้าง QR พร้อมเพย์ ${formatBaht(booking.totalAmount)}`, `Get PromptPay QR · ${formatBaht(booking.totalAmount)}`)}
+                </button>
+              )}
             </div>
           ) : (
             <div className="flex flex-col items-center gap-4 rounded-3xl border border-slate-200 bg-white p-6 text-center">

@@ -49,7 +49,7 @@ npm run dev
   node server/test/multi-room.js           # จองหลายห้อง + จองพร้อมกันแบบหลายห้อง
   node server/test/protection.js           # rate limit, จำกัดการจองค้างชำระ, จ่ายผิดซ้ำ, คำหยาบ
   node server/test/favorites.js            # รายการโปรด
-  node server/test/payment-methods.js      # วิธีชำระเงิน: บัตร / PromptPay / TrueMoney Wallet (จำลอง)
+  node server/test/payment-methods.js      # วิธีชำระเงิน: บัตร / PromptPay / TrueMoney Wallet (จำลอง · ตั้ง key Opn แล้วทดสอบผ่าน Opn ด้วย)
   node server/test/promptpay.js            # PromptPay เงินจริง: ข้อความใน QR + เฉพาะ admin (ส่วน admin ต้องตั้ง PROMPTPAY_ID)
   node server/test/assistant.js            # ผู้ช่วยแนะนำที่พัก (ส่วนตีความรันได้โดยไม่เปิด server)
   node server/test/admin.js                # หลังบ้าน: สิทธิ์, ห้อง/ปฏิทินราคา, ยกเลิก+คืนเงิน, admin คนสุดท้าย
@@ -89,13 +89,16 @@ node --env-file=server/.env server/scripts/set-role.js owner@example.com owner -
 
 ## ชำระเงินผ่าน Opn Payments (โหมดทดสอบ · ไม่บังคับ · ฟรี)
 
-ตอนนี้ต่อจริงเฉพาะ **TrueMoney Wallet** (บัตร/PromptPay ยังเป็นแบบจำลอง) — ไม่ตั้ง key ระบบใช้การชำระเงินแบบจำลองตามเดิม
+ต่อจริง **TrueMoney Wallet** และ **PromptPay QR** (ระบบตรวจเงินเข้าเอง) — บัตรยังเป็นแบบจำลอง · ไม่ตั้ง key ระบบใช้การชำระเงินแบบจำลองตามเดิม
 
 1. สมัครฟรีที่ https://dashboard.omise.co (Opn Payments) → เมนู **Keys** คัดลอก key โหมด **Test** (`skey_test_…`, `pkey_test_…`)
 2. วางใน `server/.env` ช่อง `OMISE_SECRET_KEY` / `OMISE_PUBLIC_KEY` แล้วบันทึก (server รีสตาร์ตเอง) · **ห้าม commit**
 3. ฐานข้อมูลเดิมรัน `db/06-payment-gateway.sql` (คำสั่งเดียวกับไฟล์ 03–05)
 4. ลองจอง → ชำระเงิน → TrueMoney Wallet → หน้าของ Opn เลือก **Successful** (หรือ Failed) → กลับมาหน้าเว็บเป็น "ชำระแล้ว"
    ยกเลิกการจองแล้วระบบสั่งคืนเงินที่ Opn ให้เอง (ดูใน dashboard ได้)
+5. ลอง PromptPay: ชำระเงิน → PromptPay QR → กด "สร้าง QR พร้อมเพย์" → ใน dashboard ของ Opn เปิด **Charges** → รายการล่าสุด →
+   **Actions → Mark as successful** → หน้าเว็บเปลี่ยนเป็น "ชำระแล้ว" เองภายในไม่กี่วินาที (ไม่ต้องกดอะไรที่หน้าเว็บ)
+   · Opn คืนเงิน PromptPay ไม่ได้ → ยกเลิกการจองที่จ่ายด้วย PromptPay แล้วต้องโอนคืนเอง (หน้าเว็บเตือนให้)
 
 โหมดทดสอบไม่มีการตัดเงินจริงและไม่มีค่าใช้จ่าย · ยอดขั้นต่ำต่อครั้ง ฿20 · รายละเอียดและเหตุผลของแต่ละขั้น: `docs/booking.md` ข้อ 12
 

@@ -7,13 +7,22 @@
 //   - รายการชำระเงินของ TrueMoney ไม่เก็บเบอร์วอลเล็ต (PDPA)
 //   - ถ้า server ตั้ง OMISE_SECRET_KEY (Opn โหมดทดสอบ): TrueMoney ได้ลิงก์ไปยืนยันที่ Opn · กดจ่ายซ้ำได้ลิงก์เดิม ·
 //     ยังไม่ยืนยัน = verify ตอบ pending (ขั้น "กด Successful" ต้องทำมือในหน้าของ Opn)
-//   - ตารางตัดสินผลจาก Opn (chargeOutcome) ทดสอบได้โดยไม่ต้องเปิด server
+//   - PromptPay ผ่าน Opn: ได้รูป QR · QR หมดอายุก่อนเวลาถือห้อง · กดซ้ำได้ QR เดิม · ยังไม่จ่าย = pending
+//     → สคริปต์จำลองว่าลูกค้าสแกนจ่าย (mark_as_paid ของ Opn — เฉพาะ key ทดสอบ) → การจองเปลี่ยนเป็นชำระแล้วเอง
+//     → ยกเลิกได้โดยไม่เรียกคืนเงินที่ Opn (PromptPay คืนผ่าน Opn ไม่ได้ ต้องโอนคืนเอง)
+//     (อ่าน DATABASE_URL / OMISE_SECRET_KEY จาก server/.env เอง — ใช้หาเลขรายการของ Opn ในตาราง payments)
+//   - ตารางตัดสินผลจาก Opn (chargeOutcome) + เวลาหมดอายุของ QR ทดสอบได้โดยไม่ต้องเปิด server
 // สคริปต์สมัครผู้ใช้ทดสอบเอง (อีเมล @example.test) ตอนจบยกเลิกการจองและลบบัญชีทดสอบ
 // ============================================================
 import { randomUUID } from 'node:crypto';
-import { chargeOutcome, toSatang } from '../src/lib/opn.js';
+import { fileURLToPath } from 'node:url';
+import pg from 'pg';
+import { needsManualRefund } from '../src/lib/bookings.js';
+import { chargeOutcome, opnCanRefund, promptpayExpiry, toSatang } from '../src/lib/opn.js';
 
 const API = process.env.API_URL || 'http://localhost:3000/api';
+// API ของ Opn ที่ใช้จำลองว่าลูกค้าจ่ายแล้ว (เปลี่ยนได้เผื่อทดสอบกับ Opn จำลองบนเครื่อง)
+const OPN_API = process.env.OPN_API_URL || 'https://api.omise.co';
 let failed = 0;
 const ok = (pass, label, detail = '') => {
   if (!pass) failed += 1;
@@ -42,6 +51,18 @@ ok(chargeOutcome({ status: 'pending' }).state === 'pending', 'Opn pending → �
 ok(chargeOutcome({ status: 'failed', failure_code: 'insufficient_fund' }).message === 'ยอดเงินใน TrueMoney Wallet ไม่พอ', 'Opn failed (insufficient_fund) → ข้อความไทย');
 ok(chargeOutcome({ status: 'expired' }).state === 'failed', 'Opn expired → ไม่สำเร็จ');
 ok(chargeOutcome({ status: 'successful', paid: false }).state === 'failed', 'successful แต่ paid = false → ไม่ถือว่าจ่าย');
+ok(chargeOutcome({ status: 'expired', source: { type: 'promptpay' } }).message === 'QR PromptPay หมดอายุก่อนชำระเงิน', 'Opn PromptPay expired → QR หมดอายุ');
+ok(chargeOutcome({ status: 'failed', failure_code: 'payment_cancelled', source: { type: 'promptpay' } }).message === 'ผู้จ่ายยกเลิกการชำระเงิน',
+  'Opn PromptPay failed (payment_cancelled) → ข้อความไทย');
+ok(chargeOutcome({ status: 'failed', failure_code: 'constructor', source: { type: 'promptpay' } }).message === 'ชำระเงินด้วย PromptPay ไม่สำเร็จ',
+  'รหัส error แปลกๆ (constructor) → ข้อความกลางๆ ไม่พัง');
+const holdEnd = Date.parse('2026-10-24T10:15:00Z');
+ok(promptpayExpiry(new Date(holdEnd), holdEnd - 15 * 60_000)?.toISOString() === '2026-10-24T10:14:00.000Z', 'QR หมดอายุก่อนหมดเวลาถือห้อง 1 นาที');
+ok(promptpayExpiry(new Date(holdEnd), holdEnd - 119_000) === null && promptpayExpiry(new Date(holdEnd), holdEnd - 121_000) !== null,
+  'เหลือเวลาถือห้องไม่ถึง 2 นาที → ไม่สร้าง QR');
+ok(!opnCanRefund('promptpay') && opnCanRefund('truemoney'), 'PromptPay คืนเงินผ่าน Opn ไม่ได้ · TrueMoney คืนได้');
+ok(needsManualRefund('promptpay', true) && !needsManualRefund('promptpay', false) && needsManualRefund('promptpay_live', false)
+  && !needsManualRefund('truemoney', true), 'ต้องโอนคืนเอง = PromptPay ผ่าน Opn + PromptPay เงินจริง (แบบจำลอง/TrueMoney ไม่ต้อง)');
 
 const password = randomUUID();
 const registered = await call('/auth/register', {
@@ -67,6 +88,31 @@ const book = async (offset) => {
   return res.data.booking.id;
 };
 const pay = (id, body) => call(`/bookings/${id}/pay`, { method: 'POST', cookie, body });
+const verify = (id, method) => call(`/bookings/${id}/pay/verify`, { method: 'POST', cookie, body: { method } });
+
+// PromptPay ผ่าน Opn: จำลองว่าลูกค้าสแกนจ่ายแล้ว = เรียก mark_as_paid ของ Opn ตรงๆ (ทำได้เฉพาะรายการทดสอบ)
+// เลขรายการของ Opn ไม่ส่งออกทาง API ของเรา → อ่านจากตาราง payments
+let db = null;
+async function markPromptPayPaid(bookingId) {
+  if (!process.env.DATABASE_URL || !process.env.OMISE_SECRET_KEY) {
+    process.loadEnvFile(fileURLToPath(new URL('../.env', import.meta.url))); // ไม่ทับค่าที่ตั้งไว้แล้ว
+  }
+  const key = process.env.OMISE_SECRET_KEY ?? '';
+  if (!key.startsWith('skey_test_')) return { skipped: 'ไม่ใช่ key ทดสอบ (skey_test_…) — ไม่จำลองการจ่ายกับรายการจริง' };
+  db ??= new pg.Pool({ connectionString: process.env.DATABASE_URL });
+  const { rows: [payment] } = await db.query(
+    `SELECT gateway_charge_id FROM payments WHERE booking_id = $1 AND method = 'promptpay' AND status = 'Pending'
+      ORDER BY payment_id DESC LIMIT 1`,
+    [bookingId]
+  );
+  if (!payment) return { error: 'ไม่พบรายการ PromptPay ที่รอจ่ายในตาราง payments' };
+  const res = await fetch(`${OPN_API}/charges/${payment.gateway_charge_id}/mark_as_paid`, {
+    method: 'POST',
+    headers: { Authorization: `Basic ${Buffer.from(`${key}:`).toString('base64')}` },
+  });
+  const data = await res.json().catch(() => null);
+  return res.ok ? { charge: data } : { skipped: `Opn ไม่รองรับ mark_as_paid กับรายการนี้ (${data?.code ?? res.status}) — กด Mark as successful ใน dashboard ของ Opn แทน` };
+}
 
 try {
   const cardBooking = await book(0);
@@ -74,11 +120,41 @@ try {
   ok(card.status === 200 && card.data.booking.payment?.method === 'card' && card.data.booking.payment.cardLast4 === '4242',
     'บัตรทดสอบ 4242… ผ่าน · เก็บแค่ 4 หลักท้าย', JSON.stringify(card.data));
 
-  const promptpayBooking = await book(2);
-  const promptpay = await pay(promptpayBooking, { method: 'promptpay' });
-  ok(promptpay.status === 200 && promptpay.data.booking.payment?.method === 'promptpay', 'PromptPay ผ่าน', JSON.stringify(promptpay.data));
-
   const config = (await call('/bookings/payment-config')).data;
+  const promptpayBooking = await book(2);
+  if (config?.promptpay === 'opn') {
+    console.log('— PromptPay ผ่าน Opn (โหมดทดสอบ) — QR ของ Opn + ตรวจเงินเข้าอัตโนมัติ');
+    const holdExpiresAt = (await call(`/bookings/${promptpayBooking}`, { cookie })).data.booking.holdExpiresAt;
+    const qr = await pay(promptpayBooking, { method: 'promptpay' });
+    ok(qr.status === 200 && /^data:image\/(svg\+xml|png);base64,/.test(qr.data?.qr?.image ?? ''), 'PromptPay → ได้รูป QR ของ Opn', JSON.stringify(qr.data)?.slice(0, 300));
+    ok(new Date(qr.data?.qr?.expiresAt) <= new Date(holdExpiresAt).getTime() - 60_000 + 1000 && qr.data?.qr?.amount > 0,
+      'QR หมดอายุก่อนหมดเวลาถือห้องอย่างน้อย 1 นาที · ยอดมาจาก server', `${qr.data?.qr?.expiresAt} vs ${holdExpiresAt}`);
+    const again = await pay(promptpayBooking, { method: 'promptpay' });
+    ok(again.status === 200 && again.data?.qr?.expiresAt === qr.data?.qr?.expiresAt, 'กดสร้าง QR ซ้ำ → ได้ QR ของรายการเดิม ไม่สร้างรายการซ้ำ', JSON.stringify(again.data)?.slice(0, 300));
+    const waiting = await verify(promptpayBooking, 'promptpay');
+    ok(waiting.status === 200 && waiting.data?.state === 'pending' && waiting.data.booking.paymentStatus === 'Pending',
+      'ยังไม่สแกนจ่าย → verify ตอบ pending (ยังไม่ถือว่าจ่าย)', JSON.stringify(waiting.data));
+
+    const marked = await markPromptPayPaid(promptpayBooking);
+    if (marked.skipped) {
+      console.log(`SKIP  จำลองการจ่าย: ${marked.skipped}`);
+    } else {
+      ok(!marked.error, 'จำลองว่าลูกค้าสแกนจ่าย (mark_as_paid ของ Opn)', marked.error);
+      const paid = await verify(promptpayBooking, 'promptpay');
+      ok(paid.status === 200 && paid.data?.state === 'paid' && paid.data.booking.paymentStatus === 'Paid',
+        'Opn บอกว่าเงินเข้า → การจองเปลี่ยนเป็นชำระแล้วเอง (ไม่มีใครกดยืนยัน/ไม่ต้องอัปสลิป)', JSON.stringify(paid.data));
+      ok(paid.data?.booking?.payment?.method === 'promptpay' && paid.data.booking.payment.viaGateway === true
+        && paid.data.booking.payment.manualRefund === true, 'บันทึกว่าจ่ายด้วย PromptPay ผ่าน Opn · ยกเลิกแล้วต้องโอนคืนเอง', JSON.stringify(paid.data?.booking?.payment));
+      ok((await pay(promptpayBooking, { method: 'promptpay' })).status === 409, 'จ่ายแล้วขอ QR ซ้ำ → 409');
+      const cancelled = await call(`/bookings/${promptpayBooking}/cancel`, { method: 'POST', cookie });
+      ok(cancelled.status === 200 && cancelled.data.booking.paymentStatus === 'Refunded',
+        'ยกเลิกได้โดยไม่เรียกคืนเงินที่ Opn (PromptPay คืนผ่าน Opn ไม่ได้) → บันทึกว่าคืนเงิน', JSON.stringify(cancelled.data));
+    }
+  } else {
+    const promptpay = await pay(promptpayBooking, { method: 'promptpay' });
+    ok(promptpay.status === 200 && promptpay.data.booking.payment?.method === 'promptpay', 'PromptPay ผ่าน', JSON.stringify(promptpay.data));
+  }
+
   const walletBooking = await book(4);
   if (config?.truemoney === 'opn') {
     console.log('— เชื่อม Opn Payments อยู่ (โหมดทดสอบ) — ทดสอบขั้นสร้างรายการ/ตรวจผล');
@@ -118,6 +194,7 @@ try {
   await Promise.all(created.map((id) => call(`/bookings/${id}/cancel`, { method: 'POST', cookie })));
   const removed = await call('/privacy/account', { method: 'DELETE', cookie, body: { password, confirm: 'ลบบัญชี' } });
   ok(removed.status === 200, 'ยกเลิกการจองและลบบัญชีทดสอบแล้ว', JSON.stringify(removed.data));
+  await db?.end();
 }
 
 console.log(failed ? `\n${failed} FAIL` : '\nผ่านทั้งหมด');

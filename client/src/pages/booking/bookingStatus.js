@@ -8,11 +8,13 @@ export const STATUS_META = {
 };
 
 // วิธีชำระเงิน (payments.method) → ข้อความที่แสดง เช่น "บัตร •••• 4242", "PromptPay", "TrueMoney Wallet"
-export function paymentMethodLabel(method, cardLast4, tx) {
+// viaGateway = จ่ายผ่าน Opn Payments จริง (ไม่ใช่แบบจำลอง) → ต่อท้าย "(Opn)"
+export function paymentMethodLabel(method, cardLast4, tx, viaGateway = false) {
+  const via = viaGateway ? ' (Opn)' : '';
   if (method === 'card') return `${tx('บัตร', 'Card')}${cardLast4 ? ` •••• ${cardLast4}` : ''}`;
-  if (method === 'promptpay') return 'PromptPay';
+  if (method === 'promptpay') return `PromptPay${via}`;
   if (method === 'promptpay_live') return tx('PromptPay (โอนเงินจริง)', 'PromptPay (real transfer)');
-  if (method === 'truemoney') return 'TrueMoney Wallet';
+  if (method === 'truemoney') return `TrueMoney Wallet${via}`;
   return tx('ไม่ทราบวิธี', 'Unknown method');
 }
 

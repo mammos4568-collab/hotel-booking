@@ -122,9 +122,10 @@ GitHub → Settings → Developer settings → OAuth Apps → New OAuth App
 
 ใส่ `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` ใน `.env.production` แล้ว `dc up -d` (สร้าง container แอปใหม่ด้วยค่าใหม่)
 
-**Opn (TrueMoney โหมดทดสอบ)** — ใส่ `OMISE_SECRET_KEY` / `OMISE_PUBLIC_KEY` (key ทดสอบ `skey_test_…` / `pkey_test_…`)
+**Opn (TrueMoney + PromptPay โหมดทดสอบ)** — ใส่ `OMISE_SECRET_KEY` / `OMISE_PUBLIC_KEY` (key ทดสอบ `skey_test_…` / `pkey_test_…`)
 ใน `.env.production` แล้ว `dc up -d` · ใน dashboard ของ Opn (โหมด Test) ตั้ง webhook เป็น
 `https://myhotel.duckdns.org/api/bookings/gateway/webhook` — ลูกค้าจ่ายแล้วปิดแอปไม่กลับมาเว็บ ระบบก็ยังได้ผล
+(สำคัญกับ PromptPay: ลูกค้าสแกนจ่ายในมือถือแล้วปิดหน้าเว็บได้ทันที webhook คือทางที่ระบบจะรู้ผล)
 
 **PromptPay เงินจริง (เฉพาะ admin)** — ใส่หมายเลขพร้อมเพย์ที่รับเงินใน `.env.production` ช่อง `PROMPTPAY_ID` แล้ว `dc up -d`
 · admin จ่ายด้วย QR จริงแล้วกดยืนยันเองว่าเงินเข้า · ลูกค้าทั่วไปยังเป็นแบบจำลอง (`docs/booking.md` ข้อ 13)
