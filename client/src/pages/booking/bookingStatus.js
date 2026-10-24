@@ -11,6 +11,7 @@ export const STATUS_META = {
 export function paymentMethodLabel(method, cardLast4, tx) {
   if (method === 'card') return `${tx('บัตร', 'Card')}${cardLast4 ? ` •••• ${cardLast4}` : ''}`;
   if (method === 'promptpay') return 'PromptPay';
+  if (method === 'promptpay_live') return tx('PromptPay (โอนเงินจริง)', 'PromptPay (real transfer)');
   if (method === 'truemoney') return 'TrueMoney Wallet';
   return tx('ไม่ทราบวิธี', 'Unknown method');
 }

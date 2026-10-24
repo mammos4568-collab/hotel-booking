@@ -30,12 +30,19 @@ function BookingDetail({ bookingId, onClose, onChanged }) {
   const [reason, setReason] = useState('');
   const [state, setState] = useState({ loading: false, error: '', done: '' });
   const booking = data?.booking;
+  // จ่ายด้วย PromptPay เงินจริง = โอนเข้าบัญชีตรง ระบบโอนคืนอัตโนมัติไม่ได้ → ต้องบอกให้โอนคืนเอง
+  const paidLive = booking?.payment?.method === 'promptpay_live';
 
   const cancel = async () => {
     setState({ loading: true, error: '', done: '' });
     try {
       const result = await api(`/admin/bookings/${bookingId}/cancel`, { method: 'POST', body: { reason } });
-      setState({ loading: false, error: '', done: result.refunded ? tx('ยกเลิกแล้ว และคืนเงินเต็มจำนวน', 'Cancelled and fully refunded') : tx('ยกเลิกแล้ว', 'Cancelled') });
+      const done = !result.refunded
+        ? tx('ยกเลิกแล้ว', 'Cancelled')
+        : paidLive
+          ? tx(`ยกเลิกแล้ว — อย่าลืมโอนเงินคืน ${baht(booking.totalAmount)} เอง (จ่ายด้วย PromptPay เงินจริง)`, `Cancelled — remember to transfer ${baht(booking.totalAmount)} back yourself (real PromptPay payment)`)
+          : tx('ยกเลิกแล้ว และคืนเงินเต็มจำนวน', 'Cancelled and fully refunded');
+      setState({ loading: false, error: '', done });
       setCancelling(false);
       reload();
       onChanged();
@@ -128,9 +135,11 @@ function BookingDetail({ bookingId, onClose, onChanged }) {
                     <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={2} minLength={5} maxLength={300} className={inputClass} />
                   </Field>
                   <Notice tone="info">
-                    {booking.paymentStatus === 'Paid'
-                      ? tx(`ลูกค้าชำระแล้ว — ระบบจะคืนเงิน ${baht(booking.totalAmount)} เต็มจำนวน`, `Paid — ${baht(booking.totalAmount)} will be refunded in full`)
-                      : tx('ยังไม่ได้ชำระเงิน — ห้องจะกลับมาว่างทันที', 'Not paid yet — the room is released immediately')}
+                    {booking.paymentStatus !== 'Paid'
+                      ? tx('ยังไม่ได้ชำระเงิน — ห้องจะกลับมาว่างทันที', 'Not paid yet — the room is released immediately')
+                      : paidLive
+                        ? tx(`จ่ายด้วย PromptPay เงินจริง — ระบบโอนคืนอัตโนมัติไม่ได้ ต้องโอนคืน ${baht(booking.totalAmount)} เองหลังยกเลิก`, `Paid with real PromptPay — it can't be refunded automatically; transfer ${baht(booking.totalAmount)} back yourself`)
+                        : tx(`ลูกค้าชำระแล้ว — ระบบจะคืนเงิน ${baht(booking.totalAmount)} เต็มจำนวน`, `Paid — ${baht(booking.totalAmount)} will be refunded in full`)}
                   </Notice>
                   {state.error && <Notice>{state.error}</Notice>}
                   <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

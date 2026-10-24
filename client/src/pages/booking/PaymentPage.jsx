@@ -6,6 +6,7 @@ import BookingSteps from '../../components/BookingSteps.jsx';
 import BookingSummary from '../../components/BookingSummary.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
 import { PageLoader } from '../../components/Loading.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 
 // ---------- ตรวจบัตรฝั่งหน้าเว็บ (server ตรวจซ้ำอีกรอบเสมอ) ----------
@@ -99,6 +100,7 @@ export default function PaymentPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { tx, formatPrice } = useLanguage();
+  const { user } = useAuth();
   const [booking, setBooking] = useState(null);
   const [loadError, setLoadError] = useState('');
   const [method, setMethod] = useState('card');
@@ -108,16 +110,26 @@ export default function PaymentPage() {
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState('');
   // TrueMoney จ่ายผ่าน Opn Payments จริง ('opn') หรือแบบจำลอง ('simulated') — server เป็นคนบอก
-  const [payConfig, setPayConfig] = useState({ truemoney: 'simulated', testMode: true });
+  // promptpayLive = server ตั้งหมายเลขพร้อมเพย์รับเงินจริงไว้ (ใช้ได้เฉพาะ admin — server ตรวจสิทธิ์ซ้ำทุกครั้ง)
+  const [payConfig, setPayConfig] = useState({ truemoney: 'simulated', testMode: true, promptpayLive: false });
+  const [liveQr, setLiveQr] = useState(null); // PromptPay เงินจริง: { qr, amount, account } | { error }
+  const [liveChecked, setLiveChecked] = useState(false); // admin ติ๊กว่าตรวจแล้วว่าเงินเข้าบัญชี
   const [searchParams, setSearchParams] = useSearchParams();
   const returnedFromGateway = searchParams.get('gateway_return') === '1';
   const [verifying, setVerifying] = useState(returnedFromGateway);
   const viaGateway = method === 'truemoney' && payConfig.truemoney === 'opn';
+  const canPayLive = payConfig.promptpayLive && user?.role === 'admin';
 
   useEffect(() => {
     api(`/bookings/${id}`).then((data) => setBooking(data.booking)).catch((err) => setLoadError(err.message));
     api('/bookings/payment-config').then(setPayConfig).catch(() => {});
   }, [id]);
+
+  // เลือก PromptPay เงินจริง → ขอ QR จาก server (ยอดเงินและเบอร์พร้อมเพย์อยู่ที่ server หน้าเว็บกำหนดเองไม่ได้)
+  useEffect(() => {
+    if (method !== 'promptpay_live' || liveQr) return;
+    api(`/bookings/${id}/promptpay-qr`).then(setLiveQr).catch((err) => setLiveQr({ error: err.message }));
+  }, [method, id, liveQr]);
 
   // กลับมาจากหน้ายืนยันของ TrueMoney (Opn พากลับมาพร้อม ?gateway_return=1)
   // → ให้ server ไปถาม Opn ว่าจ่ายสำเร็จไหม (หน้าเว็บไม่ตัดสินเอง) · ยังรอผล = ถามซ้ำทุก 3 วินาที สูงสุด 10 ครั้ง
@@ -187,6 +199,7 @@ export default function PaymentPage() {
         card: { method, cardNumber: digits, cardName: card.name, expiry: card.expiry, cvc: card.cvc },
         truemoney: viaGateway ? { method } : { method, walletPhone: walletDigits },
         promptpay: { method },
+        promptpay_live: { method }, // admin ยืนยันว่าเงินเข้าแล้ว — server ตรวจสิทธิ์ admin + ล็อกการจองก่อนบันทึก
       };
       const result = await api(`/bookings/${id}/pay`, { method: 'POST', body: bodies[method] });
       if (result.redirectUrl) {
@@ -260,14 +273,20 @@ export default function PaymentPage() {
 
           <div>
             <h1 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">{tx('ชำระเงิน', 'Payment')}</h1>
-            <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500"><Icon name="lock" className="h-4 w-4" />{tx('ระบบชำระเงินจำลองสำหรับโปรเจกต์ — ไม่มีการตัดเงินจริง', 'Simulated payment for this project — no real charge')}</p>
+            {method === 'promptpay_live' ? (
+              <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-amber-700"><Icon name="alert" className="h-4 w-4" />{tx('PromptPay เงินจริง — เฉพาะผู้ดูแลระบบ ใช้ทดสอบเท่านั้น', 'Real-money PromptPay — admins only, for testing')}</p>
+            ) : (
+              <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500"><Icon name="lock" className="h-4 w-4" />{tx('ระบบชำระเงินจำลองสำหรับโปรเจกต์ — ไม่มีการตัดเงินจริง', 'Simulated payment for this project — no real charge')}</p>
+            )}
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className={`grid gap-3 ${canPayLive ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
             {[
               { key: 'card', icon: 'card', label: tx('บัตรเครดิต / เดบิต', 'Credit / debit card') },
               { key: 'promptpay', icon: 'qr', label: 'PromptPay QR' },
               { key: 'truemoney', icon: 'wallet', label: 'TrueMoney Wallet' },
+              // เงินจริง: แสดงเฉพาะ admin เมื่อ server ตั้งหมายเลขพร้อมเพย์ไว้
+              ...(canPayLive ? [{ key: 'promptpay_live', icon: 'qr', label: tx('PromptPay เงินจริง (admin)', 'PromptPay real money (admin)') }] : []),
             ].map((option) => (
               <button
                 key={option.key}
@@ -430,6 +449,43 @@ export default function PaymentPage() {
                 </button>
               )}
             </form>
+          ) : method === 'promptpay_live' ? (
+            // PromptPay เงินจริง (เฉพาะ admin): QR ที่ server สร้างพร้อมยอดเงินของการจองนี้ → สแกนโอนจริง
+            // ธนาคารไม่แจ้งผลกลับมาที่เว็บ → admin ตรวจในแอปธนาคารว่าเงินเข้า แล้วกดยืนยันเอง
+            <div className="flex flex-col items-center gap-4 rounded-3xl border-2 border-amber-300 bg-white p-6 text-center">
+              <span className="rounded-lg bg-brand-900 px-3 py-1 text-xs font-black tracking-widest text-white">PromptPay</span>
+              <p className="w-full rounded-2xl bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900">
+                {tx('เงินจริง — โอนแล้วเงินเข้าบัญชีพร้อมเพย์ของเว็บทันที ใช้ทดสอบเท่านั้น', 'Real money — transfers go straight to the site’s PromptPay account. For testing only.')}
+              </p>
+              {liveQr?.error ? (
+                <p className="w-full rounded-2xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{liveQr.error}</p>
+              ) : liveQr ? (
+                <>
+                  <img src={liveQr.qr} alt={tx('PromptPay QR สำหรับโอนเงินจริง', 'PromptPay QR for a real transfer')} className="h-56 w-56 rounded-2xl border border-slate-200" />
+                  <div>
+                    <p className="text-sm text-slate-500">{tx('ยอดที่ต้องโอน (บาท)', 'Amount to transfer (THB)')}</p>
+                    {/* โอนจริงต้องเป็นบาทเสมอ — ไม่แปลงตามสกุลเงินที่เลือกดู */}
+                    <p className="text-3xl font-black text-slate-900">฿{liveQr.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    <p className="mt-1 text-xs text-slate-500">{tx(`โอนเข้าพร้อมเพย์ ${liveQr.account}`, `To PromptPay ${liveQr.account}`)}</p>
+                  </div>
+                  <ol className="w-full list-decimal space-y-1 rounded-2xl bg-slate-50 px-4 py-3 pl-8 text-left text-sm text-slate-600">
+                    <li>{tx('สแกนด้วยแอปธนาคาร หรือแอป TrueMoney (สแกนจ่ายพร้อมเพย์)', 'Scan with a banking app or the TrueMoney app (PromptPay scan)')}</li>
+                    <li>{tx('ตรวจยอดเงินและชื่อบัญชีปลายทางก่อนกดโอน', 'Check the amount and recipient name before you transfer')}</li>
+                    <li>{tx('เปิดแอปธนาคารของบัญชีที่รับเงิน ดูว่าเงินเข้าแล้วจริง แล้วค่อยกดยืนยันด้านล่าง', 'Open the receiving account’s banking app, make sure the money arrived, then confirm below')}</li>
+                  </ol>
+                  <label className="flex w-full items-start gap-2 text-left text-sm font-semibold text-slate-700">
+                    <input type="checkbox" checked={liveChecked} onChange={(event) => setLiveChecked(event.target.checked)} className="mt-0.5 h-4 w-4 accent-brand-600" />
+                    {tx('ตรวจในแอปธนาคารแล้ว เงินเข้าบัญชีพร้อมเพย์ครบตามยอด', 'I checked the banking app — the full amount has arrived')}
+                  </label>
+                </>
+              ) : (
+                <p className="py-10 text-sm text-slate-500">{tx('กำลังสร้าง QR…', 'Creating QR…')}</p>
+              )}
+              {payError && <p className="w-full rounded-2xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{payError}</p>}
+              <button type="button" onClick={pay} disabled={paying || !liveChecked || !liveQr?.qr} className="w-full rounded-2xl bg-brand-600 py-4 text-base font-bold text-white shadow-lg shadow-brand-600/25 hover:bg-brand-700 disabled:opacity-60">
+                {paying ? tx('กำลังบันทึก…', 'Saving…') : tx('ยืนยันว่าได้รับเงินแล้ว', 'Confirm the money has arrived')}
+              </button>
+            </div>
           ) : (
             <div className="flex flex-col items-center gap-4 rounded-3xl border border-slate-200 bg-white p-6 text-center">
               <span className="rounded-lg bg-brand-900 px-3 py-1 text-xs font-black tracking-widest text-white">PromptPay</span>

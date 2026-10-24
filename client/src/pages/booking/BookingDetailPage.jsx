@@ -187,9 +187,12 @@ export default function BookingDetailPage({ justBooked = false }) {
       <ConfirmDialog
         open={confirmCancel}
         title={tx('ยกเลิกการจองนี้?', 'Cancel this booking?')}
-        message={booking.paymentStatus === 'Paid'
-          ? tx(`ระบบจะคืนเงิน ${formatPrice(booking.totalAmount)} ไปยังช่องทางที่ชำระ และห้องจะถูกปล่อยให้ผู้อื่นจอง`, `We'll refund ${formatPrice(booking.totalAmount)} to your original payment method and release the room.`)
-          : tx('ห้องที่ถือไว้จะถูกปล่อยให้ผู้อื่นจอง', 'The held room will be released.')}
+        message={booking.paymentStatus !== 'Paid'
+          ? tx('ห้องที่ถือไว้จะถูกปล่อยให้ผู้อื่นจอง', 'The held room will be released.')
+          : booking.payment?.method === 'promptpay_live'
+            // PromptPay เงินจริงโอนเข้าบัญชีตรง ไม่ผ่าน gateway → ระบบสั่งคืนเงินเองไม่ได้
+            ? tx(`การจองนี้จ่ายด้วย PromptPay เงินจริง — ระบบโอนคืนอัตโนมัติไม่ได้ ต้องโอนคืน ${formatPrice(booking.totalAmount)} เอง และห้องจะถูกปล่อยให้ผู้อื่นจอง`, `This booking was paid with real PromptPay — it can't be refunded automatically; transfer ${formatPrice(booking.totalAmount)} back yourself. The room will be released.`)
+            : tx(`ระบบจะคืนเงิน ${formatPrice(booking.totalAmount)} ไปยังช่องทางที่ชำระ และห้องจะถูกปล่อยให้ผู้อื่นจอง`, `We'll refund ${formatPrice(booking.totalAmount)} to your original payment method and release the room.`)}
         confirmLabel={tx('ยืนยันการยกเลิก', 'Yes, cancel booking')}
         loading={cancelling}
         error={cancelError}

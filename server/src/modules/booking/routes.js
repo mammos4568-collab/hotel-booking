@@ -1,5 +1,6 @@
 // [B] จอง & ชำระเงิน
 import { Router } from 'express';
+import QRCode from 'qrcode';
 import { pool } from '../../db.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { ACTIVE_BOOKING_SQL, HOLD_MINUTES, getNightlyRates, lockRoomType, summarizeStay } from '../../lib/availability.js';
@@ -10,6 +11,7 @@ import { todayInBangkok, validateStay } from '../../lib/dates.js';
 import { rateLimit } from '../../lib/rateLimit.js';
 import { containsProfanity } from '../../lib/moderation.js';
 import { chargeOutcome, createTrueMoneyCharge, opnEnabled, opnTestMode, refundCharge, retrieveCharge } from '../../lib/opn.js';
+import { maskPromptpay, promptpayPayload, sitePromptpay } from '../../lib/promptpay.js';
 
 const router = Router();
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -246,9 +248,14 @@ router.post('/', requireAuth, createLimiter, async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // GET /api/bookings/payment-config — หน้าชำระเงินใช้เลือกว่าจะแสดง TrueMoney แบบไหน
 //   'opn' = เชื่อม Opn Payments จริง (พาไปยืนยันในแอป) · 'simulated' = แบบจำลอง (กรอกเบอร์ทดสอบ)
+//   promptpayLive = ตั้ง PROMPTPAY_ID แล้ว → ผู้ดูแลระบบลองโอนเงินจริงด้วย PromptPay ได้ (ไม่บอกเบอร์ในนี้)
 // ---------------------------------------------------------------------------
 router.get('/payment-config', (req, res) => {
-  res.json({ truemoney: opnEnabled() ? 'opn' : 'simulated', testMode: !opnEnabled() || opnTestMode() });
+  res.json({
+    truemoney: opnEnabled() ? 'opn' : 'simulated',
+    testMode: !opnEnabled() || opnTestMode(),
+    promptpayLive: Boolean(sitePromptpay()),
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -266,8 +273,37 @@ router.get('/:id', requireAuth, async (req, res, next) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/bookings/:id/promptpay-qr — PromptPay QR "เงินจริง" (เฉพาะผู้ดูแลระบบ ใช้กับการจองของตัวเอง)
+//   ทำไมเฉพาะ admin: เว็บนี้เป็นโรงแรมสมมติ ถ้าเปิดให้คนทั่วไปโอนเงินจริงจะเสี่ยงเป็นการหลอกรับเงิน
+//   ยอดเงิน = ยอดของการจองที่ server คิดไว้แล้ว (ไม่รับยอดจากหน้าเว็บ) · โอนเข้าพร้อมเพย์ที่ตั้งใน PROMPTPAY_ID
+//   ธนาคารไม่แจ้งผลกลับมาที่เว็บ → admin ตรวจในแอปธนาคารแล้วกดยืนยันเอง (POST /:id/pay method 'promptpay_live')
+// ---------------------------------------------------------------------------
+router.get('/:id/promptpay-qr', requireAuth, async (req, res, next) => {
+  try {
+    if (req.user.role !== 'admin') throw httpError(403, 'PromptPay เงินจริงใช้ได้เฉพาะผู้ดูแลระบบ');
+    const target = sitePromptpay();
+    if (!target) throw httpError(404, 'ยังไม่ได้ตั้งหมายเลขพร้อมเพย์สำหรับรับเงินจริง (PROMPTPAY_ID)');
+    const bookingId = toPositiveInt(req.params.id);
+    if (!bookingId) throw httpError(400, 'เลขการจองไม่ถูกต้อง');
+    const row = await findOwnBooking(pool, bookingId, req.user.id);
+    if (deriveStatus(row, todayInBangkok()) !== 'awaiting_payment') throw httpError(409, 'การจองนี้ไม่ได้รอชำระเงินแล้ว');
+
+    const payload = promptpayPayload(target, row.total_amount);
+    res.json({
+      qr: await QRCode.toDataURL(payload, { errorCorrectionLevel: 'M', margin: 2, width: 320 }),
+      payload, // ข้อความใน QR (ไว้ตรวจ/อธิบาย — admin เห็นได้ เพราะสแกน QR ก็ได้ข้อความเดียวกัน)
+      amount: row.total_amount,
+      account: maskPromptpay(target),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/bookings/:id/pay — ชำระเงิน
 // body: { method: 'card', cardNumber, cardName, expiry: 'MM/YY', cvc } · { method: 'promptpay' }  (จำลอง)
+//       · { method: 'promptpay_live' } = admin ยืนยันว่าได้รับเงินโอน PromptPay จริงแล้ว (ดู /:id/promptpay-qr)
 //       · { method: 'truemoney', walletPhone }
 //         - ตั้ง OMISE_SECRET_KEY แล้ว → จ่ายผ่าน Opn Payments จริง: ตอบ { redirectUrl } ให้ไปยืนยันในแอป TrueMoney
 //           แล้วหน้าเว็บเรียก /pay/verify ตอนกลับมา (walletPhone ไม่ใช้ — ลูกค้ายืนยันในแอปเอง)
@@ -284,7 +320,7 @@ const TEST_CARDS = new Set([
 const DECLINED_TEST_CARD = '4000000000000002';
 // เบอร์ทดสอบของ TrueMoney Wallet ที่จำลองว่า "ยอดเงินในวอลเล็ทไม่พอ" — เบอร์มือถืออื่นที่ถูกรูปแบบผ่านหมด
 const DECLINED_TEST_WALLET = '0800000000';
-const PAYMENT_METHODS = ['card', 'promptpay', 'truemoney'];
+const PAYMENT_METHODS = ['card', 'promptpay', 'promptpay_live', 'truemoney'];
 
 function passesLuhn(digits) {
   let sum = 0;
@@ -301,7 +337,8 @@ function passesLuhn(digits) {
 
 function validatePayment(body) {
   const method = body?.method;
-  if (method === 'promptpay') return { method, cardLast4: null };
+  // promptpay = จำลอง · promptpay_live = เงินจริงที่ admin ยืนยันเอง (ตรวจสิทธิ์ admin แล้วใน route ก่อนมาถึงตรงนี้)
+  if (method === 'promptpay' || method === 'promptpay_live') return { method, cardLast4: null };
   if (method === 'truemoney') {
     // จำลองการจ่ายด้วย TrueMoney Wallet: ตรวจแค่รูปแบบเบอร์มือถือไทยที่ผูกกับวอลเล็ต (ไม่มีการตัดเงินจริง)
     // ไม่เก็บเบอร์ลงฐานข้อมูล — ใช้ยืนยันการจ่ายครั้งนี้เท่านั้น (PDPA: เก็บเท่าที่จำเป็น)
@@ -488,6 +525,12 @@ router.post('/:id/pay', requireAuth, payLimiter, async (req, res, next) => {
     }
     if (status !== 'awaiting_payment') {
       throw httpError(409, status === 'cancelled' ? 'การจองนี้ถูกยกเลิกแล้ว' : 'การจองนี้ชำระเงินแล้ว');
+    }
+
+    // PromptPay เงินจริง: ยืนยันได้เฉพาะ admin (และต้องตั้ง PROMPTPAY_ID) — admin กดหลังเห็นเงินเข้าบัญชีในแอปธนาคาร
+    // ผ่านล็อกแถวการจอง + ตรวจว่ายังรอชำระอยู่ เหมือนวิธีอื่น → กดยืนยันซ้ำสองแท็บ/หลังหมดเวลาถือห้อง ไม่ได้
+    if (req.body?.method === 'promptpay_live' && (req.user.role !== 'admin' || !sitePromptpay())) {
+      throw httpError(403, 'PromptPay เงินจริงใช้ได้เฉพาะผู้ดูแลระบบ');
     }
 
     // TrueMoney + เชื่อม Opn Payments อยู่ → สร้างรายการที่ gateway แล้วส่งลูกค้าไปยืนยันในแอป

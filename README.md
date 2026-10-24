@@ -50,6 +50,7 @@ npm run dev
   node server/test/protection.js           # rate limit, จำกัดการจองค้างชำระ, จ่ายผิดซ้ำ, คำหยาบ
   node server/test/favorites.js            # รายการโปรด
   node server/test/payment-methods.js      # วิธีชำระเงิน: บัตร / PromptPay / TrueMoney Wallet (จำลอง)
+  node server/test/promptpay.js            # PromptPay เงินจริง: ข้อความใน QR + เฉพาะ admin (ส่วน admin ต้องตั้ง PROMPTPAY_ID)
   node server/test/assistant.js            # ผู้ช่วยแนะนำที่พัก (ส่วนตีความรันได้โดยไม่เปิด server)
   node server/test/admin.js                # หลังบ้าน: สิทธิ์, ห้อง/ปฏิทินราคา, ยกเลิก+คืนเงิน, admin คนสุดท้าย
   node server/test/avatar.js               # รูปโปรไฟล์: ตรวจไฟล์ 400×400, ลิงก์รหัสสุ่ม, สำเนาข้อมูล, ลบบัญชีแล้วรูปหาย
@@ -97,6 +98,10 @@ node --env-file=server/.env server/scripts/set-role.js owner@example.com owner -
    ยกเลิกการจองแล้วระบบสั่งคืนเงินที่ Opn ให้เอง (ดูใน dashboard ได้)
 
 โหมดทดสอบไม่มีการตัดเงินจริงและไม่มีค่าใช้จ่าย · ยอดขั้นต่ำต่อครั้ง ฿20 · รายละเอียดและเหตุผลของแต่ละขั้น: `docs/booking.md` ข้อ 12
+
+**PromptPay เงินจริง (เฉพาะผู้ดูแลระบบ · ไม่บังคับ)** — ใส่หมายเลขพร้อมเพย์ของคุณใน `server/.env` ช่อง `PROMPTPAY_ID` (ห้าม commit)
+บัญชี admin จะเห็นตัวเลือก "PromptPay เงินจริง (admin)" ตอนชำระเงิน: สแกน QR ที่มียอดของการจองโอนจริง แล้ว admin กดยืนยันเองว่าเงินเข้า
+(ธนาคารไม่แจ้งผลกลับมาที่เว็บ) · ลูกค้าทั่วไปยังจ่ายแบบจำลอง · รายละเอียด: `docs/booking.md` ข้อ 13
 
 ## Deploy (Docker production)
 

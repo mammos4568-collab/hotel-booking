@@ -126,6 +126,9 @@ GitHub → Settings → Developer settings → OAuth Apps → New OAuth App
 ใน `.env.production` แล้ว `dc up -d` · ใน dashboard ของ Opn (โหมด Test) ตั้ง webhook เป็น
 `https://myhotel.duckdns.org/api/bookings/gateway/webhook` — ลูกค้าจ่ายแล้วปิดแอปไม่กลับมาเว็บ ระบบก็ยังได้ผล
 
+**PromptPay เงินจริง (เฉพาะ admin)** — ใส่หมายเลขพร้อมเพย์ที่รับเงินใน `.env.production` ช่อง `PROMPTPAY_ID` แล้ว `dc up -d`
+· admin จ่ายด้วย QR จริงแล้วกดยืนยันเองว่าเงินเข้า · ลูกค้าทั่วไปยังเป็นแบบจำลอง (`docs/booking.md` ข้อ 13)
+
 ---
 
 ## 5. ตรวจหลังขึ้นเว็บ

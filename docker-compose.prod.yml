@@ -56,6 +56,8 @@ services:
       # <PUBLIC_URL>/api/bookings/gateway/webhook (สำคัญตอนลูกค้าจ่ายแล้วไม่ได้กลับมาหน้าเว็บ)
       OMISE_SECRET_KEY: ${OMISE_SECRET_KEY:-}
       OMISE_PUBLIC_KEY: ${OMISE_PUBLIC_KEY:-}
+      # PromptPay เงินจริงสำหรับผู้ดูแลระบบ (หมายเลขพร้อมเพย์ที่รับเงิน) — เว้นว่าง = ปิด ใช้แบบจำลองอย่างเดียว
+      PROMPTPAY_ID: ${PROMPTPAY_ID:-}
     ports:
       # ผูกกับ 127.0.0.1 = เปิดได้จากเครื่องนี้เท่านั้น (http://localhost:8080) คนนอกเข้าทาง Caddy (https) อย่างเดียว
       # สำคัญบน Linux: พอร์ตที่ Docker เปิดแบบ 0.0.0.0 ทะลุ firewall (ufw) ได้ → http ธรรมดาจะหลุดออกอินเทอร์เน็ต

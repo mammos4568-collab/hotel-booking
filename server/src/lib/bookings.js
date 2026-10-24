@@ -104,6 +104,8 @@ export async function findBooking(db, bookingId) {
 
 // ยกเลิกการจอง (+ คืนเงินถ้าจ่ายแล้ว) — ต้องเรียกใน transaction ที่ล็อกแถวการจองไว้แล้ว (SELECT ... FOR UPDATE)
 // ใช้ทั้งลูกค้ายกเลิกเอง และหลังบ้านยกเลิกให้ (เช่น ที่พักมีปัญหา)
+// จ่ายด้วย PromptPay เงินจริง (method 'promptpay_live') → ระบบโอนคืนให้ไม่ได้ (โอนเข้าบัญชีตรง ไม่ผ่าน gateway)
+// ฐานข้อมูลบันทึกว่าคืนเงิน และหน้าเว็บเตือนให้โอนคืนเอง
 export async function cancelBooking(client, row) {
   const wasPaid = String(row.payment_status).toLowerCase() === 'paid';
   if (wasPaid) {

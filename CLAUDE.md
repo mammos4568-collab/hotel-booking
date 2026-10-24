@@ -48,7 +48,7 @@ Stack: **React (Vite + Tailwind v4) + Express + PostgreSQL 15** รันผ่�
    การกันจองซ้อน) ให้**อธิบายเหตุผลสั้นๆ** ว่าทำไมต้องเขียนแบบนี้ ไม่ใช่โยนโค้ดให้เฉยๆ
    โปรเจกต์นี้ต้องพรีเซนต์ ผู้ใช้ต้องตอบคำถามอาจารย์ได้ทุกบรรทัด
 5. ตอบเป็น**ภาษาไทย** โค้ดและชื่อตัวแปรเป็นภาษาอังกฤษ คอมเมนต์ในโค้ดภาษาไทยได้
-6. **อย่าเพิ่ม dependency ใหม่โดยไม่ถาม** (ตอนนี้ server มี `express`, `pg`, `cors`, `bcryptjs` ·
+6. **อย่าเพิ่ม dependency ใหม่โดยไม่ถาม** (ตอนนี้ server มี `express`, `pg`, `cors`, `bcryptjs`, `qrcode` (วาดรูป QR พร้อมเพย์) ·
    client มี `react`, `react-router-dom`, `tailwindcss` — ไอคอนใช้ `components/Icon.jsx` ไม่ต้องลง library)
    และ**อย่าติดตั้ง ORM** — ทีมใช้ `pg` เขียน SQL ตรงๆ เพื่อให้อธิบายได้ตอนพรีเซนต์
 
@@ -65,6 +65,7 @@ node server/test/multi-room.js           # จองหลายห้อง + �
 node server/test/protection.js           # ทดสอบ rate limit / เพดานจองค้าง / จ่ายผิด / คำหยาบ
 node server/test/favorites.js            # รายการโปรด
 node server/test/payment-methods.js      # วิธีชำระเงิน บัตร / PromptPay / TrueMoney Wallet (จำลอง)
+node server/test/promptpay.js            # PromptPay เงินจริง 19 ข้อ (ข้อความใน QR + เฉพาะ admin · ส่วน admin ต้องตั้ง PROMPTPAY_ID)
 node server/test/assistant.js            # ผู้ช่วยแนะนำที่พัก (~120 ข้อ · ส่วนตีความไม่ต้องเปิด server)
 node server/test/admin.js                # หลังบ้าน 76 ข้อ (อ่าน server/.env เอง เพื่อตั้ง admin + ล้างข้อมูลทดสอบ)
 node server/test/avatar.js               # รูปโปรไฟล์ 18 ข้อ (ตรวจไฟล์, ลิงก์รหัสสุ่ม, สำเนาข้อมูล, ลบบัญชี · อ่าน server/.env เอง)
@@ -125,6 +126,9 @@ node --env-file=server/.env server/scripts/set-role.js <email> admin   # ตั�
 - ชำระเงินจริงผ่าน Opn Payments (ตั้ง `OMISE_SECRET_KEY` = เปิด · ตอนนี้เฉพาะ TrueMoney): สถานะ "จ่ายแล้ว" ต้องมาจากการ
   ดึงรายการจาก Opn ด้วย secret key เท่านั้น (`retrieveCharge`) ห้ามเชื่อ query string หรือข้อมูลใน webhook ·
   อัปเดตผลผ่าน `applyGatewayCharge()` ใน transaction ที่ล็อกแถวการจองเสมอ · ยกเลิก = คืนเงินที่ Opn ก่อนแก้ DB — ดู `docs/booking.md` ข้อ 12
+- PromptPay เงินจริง (ตั้ง `PROMPTPAY_ID` = เปิด): **เฉพาะ admin กับการจองของตัวเอง** — ห้ามเปิดให้ลูกค้าทั่วไป (เว็บเป็นโรงแรมสมมติ) ·
+  ข้อความใน QR สร้างที่ `lib/promptpay.js` (EMVCo + CRC) ยอดจาก server เสมอ · ธนาคารไม่แจ้งผล → admin ยืนยันเองด้วย
+  `POST /:id/pay { method: "promptpay_live" }` (ผ่านล็อกแถวการจองเหมือนวิธีอื่น) · ยกเลิกแล้วต้องโอนคืนเอง — ดู `docs/booking.md` ข้อ 13
 - จ่ายด้วยบัตร (จำลอง) รับเฉพาะบัตรทดสอบ — รายการ `TEST_CARDS` มี 2 ที่ต้องตรงกัน: `modules/booking/routes.js` (ตรวจซ้ำ)
   และ `pages/booking/PaymentPage.jsx` (บล็อกก่อนส่ง → เลขบัตรจริงไม่ออกจากเบราว์เซอร์)
 - รูปโรงแรม + รูปประเภทห้อง (อย่างละสูงสุด 5 รูป): เบราว์เซอร์ครอป/ย่อเป็น 1200×800 JPEG (`client/src/lib/imageResize.js`) · server ตรวจซ้ำด้วย
@@ -154,6 +158,7 @@ bookings(booking_id, booking_reference, user_id, property_id, room_id,
          check_in_date, check_out_date, num_guests, num_rooms*, total_amount,
          payment_status, booking_status, guest_name*, guest_email*, guest_phone*, special_requests*, ...)
 payments*(payment_id, booking_id, amount, method, card_last4, status, paid_at, gateway_charge_id‡)  -- status: Success|Failed|Refunded|Pending
+                                                                            -- method: card|promptpay|promptpay_live|truemoney
 favorites*(user_id, property_id, created_at)                                -- รายการโปรด PK (user_id, property_id)
 reviews(review_id, booking_id UNIQUE, user_id, property_id, rating, comment, ...)
 oauth_accounts(...)                                                         -- ของเพื่อน (login ผ่าน Google ฯลฯ)
