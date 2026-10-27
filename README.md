@@ -47,7 +47,7 @@ npm run dev
   ```bash
   node server/test/concurrent-booking.js   # จองพร้อมกัน 10 คำขอ → สำเร็จเท่าจำนวนห้องพอดี
   node server/test/multi-room.js           # จองหลายห้อง + จองพร้อมกันแบบหลายห้อง
-  node server/test/protection.js           # rate limit, จำกัดการจองค้างชำระ, จ่ายผิดซ้ำ, คำหยาบ
+  node server/test/protection.js           # rate limit, จำกัดการจองค้างชำระ, จ่ายผิดซ้ำ, คำหยาบ, ข้อความสแปม
   node server/test/favorites.js            # รายการโปรด
   node server/test/payment-methods.js      # วิธีชำระเงิน: บัตร / PromptPay / TrueMoney Wallet (จำลอง · ตั้ง key Opn แล้วทดสอบผ่าน Opn ด้วย)
   node server/test/promptpay.js            # PromptPay เงินจริง: ข้อความใน QR + เฉพาะ admin (ส่วน admin ต้องตั้ง PROMPTPAY_ID)
@@ -55,7 +55,7 @@ npm run dev
   node server/test/admin.js                # หลังบ้าน: สิทธิ์, ห้อง/ปฏิทินราคา, ยกเลิก+คืนเงิน, admin คนสุดท้าย
   node server/test/avatar.js               # รูปโปรไฟล์: ตรวจไฟล์ 400×400, ลิงก์รหัสสุ่ม, สำเนาข้อมูล, ลบบัญชีแล้วรูปหาย
   node server/test/hotel-images.js         # รูปโรงแรม + รูปห้อง: สูงสุด 5 รูป, ตรวจไฟล์ 1200×800, อัปพร้อมกัน, เรียง/ลบ
-  node server/test/hotel-approval.js       # อนุมัติโรงแรม + คำหยาบ/คำทับศัพท์ในชื่อโรงแรม
+  node server/test/hotel-approval.js       # อนุมัติโรงแรม + คำหยาบ/คำทับศัพท์/ข้อความสแปมในข้อมูลโรงแรม
   ```
 
 ## หลังบ้าน (เจ้าของโรงแรม / ผู้ดูแลระบบ)

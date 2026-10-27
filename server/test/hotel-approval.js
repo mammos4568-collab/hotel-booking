@@ -1,5 +1,5 @@
 // ============================================================
-// ทดสอบการอนุมัติโรงแรม + ตัวกรองคำหยาบในข้อมูลโรงแรม (ต้องเปิด server ก่อน: npm run dev)
+// ทดสอบการอนุมัติโรงแรม + ตัวกรองคำหยาบ/ข้อความสแปมในข้อมูลโรงแรม (ต้องเปิด server ก่อน: npm run dev)
 // รัน: node server/test/hotel-approval.js
 //   (อ่าน DATABASE_URL จาก server/.env เอง — ใช้ตั้ง admin ด้วยสคริปต์ และล้างข้อมูลทดสอบตอนจบ)
 //
@@ -101,11 +101,14 @@ try {
   ok(queue.data?.hotels?.some((h) => h.id === hotelId) && queue.data.counts.pending >= 1, 'เจ้าของเห็นโรงแรมตัวเองในรายการรออนุมัติ + จำนวนแต่ละสถานะ');
   ok((await owner.call('/admin/stats')).data?.totals?.pendingHotels >= 1, 'หน้าภาพรวมนับโรงแรมรออนุมัติ');
 
-  console.log('\n=== 3) ตรวจคำหยาบตอนบันทึก ===');
+  console.log('\n=== 3) ตรวจคำหยาบ/ข้อความสแปมตอนบันทึก ===');
   const badName = await owner.call('/admin/hotels', 'POST', hotelBody('Kuay Resort'));
   ok(badName.status === 400 && /kuay/.test(badName.data?.message), 'ชื่อ "Kuay Resort" → 400 บอกคำที่เจอ', badName.data?.message);
   const badDescription = await owner.call('/admin/hotels', 'POST', { ...hotelBody(`Clean Name ${tag}`), description: 'บรรยากาศดี ฟัคยู' });
   ok(badDescription.status === 400 && /คำอธิบาย/.test(badDescription.data?.message), 'คำอธิบายมีคำทับศัพท์หยาบ → 400', badDescription.data?.message);
+  const spamDescription = await owner.call('/admin/hotels', 'POST', { ...hotelBody(`Clean Name ${tag}`), description: 'ก'.repeat(60) });
+  if (spamDescription.data?.hotel?.id) hotelIds.push(spamDescription.data.hotel.id);
+  ok(spamDescription.status === 400 && /คำอธิบาย.*ติดกันเกิน/.test(spamDescription.data?.message), 'คำอธิบายพิมพ์ "กกกก…" ซ้ำๆ (สแปม) → 400', spamDescription.data?.message);
   ok((await owner.call(`/admin/hotels/${hotelId}/rooms`, 'POST', { ...roomBody, name: 'Sh1t Room' })).status === 400, 'ชื่อห้อง "Sh1t Room" → 400');
   const kwai = await owner.call('/admin/hotels', 'POST', hotelBody(`River Kwai Resort ${tag}`));
   if (kwai.data?.hotel?.id) hotelIds.push(kwai.data.hotel.id);

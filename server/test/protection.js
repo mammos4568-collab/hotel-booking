@@ -1,16 +1,18 @@
 // ============================================================
 // ทดสอบการป้องกันการใช้งานในทางที่ผิดของระบบจอง
-//   1) คำขอพิเศษที่มีถ้อยคำไม่สุภาพ → 400 (แต่คำปกติอย่าง "สัดส่วน" ต้องผ่าน)
+//   1) คำขอพิเศษที่มีถ้อยคำไม่สุภาพ หรือพิมพ์ซ้ำๆ (สแปม) → 400 (แต่คำปกติอย่าง "สัดส่วน" ต้องผ่าน)
 //   2) จองค้างชำระพร้อมกันเกิน 3 รายการ → 429
 //   3) จ่ายเงินไม่สำเร็จครบ 5 ครั้ง → 429 และการจองถูกยกเลิก
 //   4) ยิงคำขอเกิน 10 ครั้งใน 1 นาที → 429 (rate limit)
-//   5) ความคิดเห็นรีวิวที่มีถ้อยคำไม่สุภาพ (ทั้งเขียนใหม่และแก้ไข) → 400
+//   5) ความคิดเห็นรีวิวที่มีถ้อยคำไม่สุภาพ หรือเป็นสแปม (ทั้งเขียนใหม่และแก้ไข) → 400
 //   6) รายการรีวิวสาธารณะแสดงชื่อแบบย่อ และไม่ส่ง user id (PDPA)
+//   7) ตัวกรองสแปม: "กกกก", "asdasd", "55555" ถูกบล็อก · ยืดเสียง/หัวเราะแบบปกติ ("มากกกก", "555") ผ่าน
 //
 // วิธีรัน (เปิด server ก่อน):  node server/test/protection.js
 // สคริปต์สมัครผู้ใช้ทดสอบเอง (อีเมล @example.test) ตอนจบยกเลิกการจองที่สร้างทั้งหมดและลบบัญชีทดสอบ
 // ============================================================
 import { randomUUID } from 'node:crypto';
+import { findSpam } from '../src/lib/moderation.js';
 
 const API = process.argv.find((a) => a.startsWith('--api='))?.slice(6) || 'http://localhost:3000/api';
 const DECLINED_CARD = { method: 'card', cardNumber: '4000000000000002', cardName: 'TEST', expiry: '12/30', cvc: '123' };
@@ -72,6 +74,8 @@ async function main() {
   check('ข้อความมีคำหยาบแบบเลี่ยง (ค.ว.ย) ถูกปฏิเสธ', rude.status === 400, rude.data?.message);
   const english = await call('/bookings', { method: 'POST', cookie: a, body: { roomId: room.id, ...stay(0), guests: 1, specialRequests: 'f*ck this room' } });
   check('คำหยาบภาษาอังกฤษ (f*ck) ถูกปฏิเสธ', english.status === 400, english.data?.message);
+  const spamRequest = await call('/bookings', { method: 'POST', cookie: a, body: { roomId: room.id, ...stay(0), guests: 1, specialRequests: 'ก ก ก ก ก ก ก ก ก ก ก ก ก ก ก ก ก ก ก ก' } });
+  check('คำขอพิเศษพิมพ์ซ้ำ "ก ก ก ก…" (สแปม) ถูกปฏิเสธ', spamRequest.status === 400 && /คำขอพิเศษ/.test(spamRequest.data?.message), spamRequest.data?.message);
   const polite = await call('/bookings', { method: 'POST', cookie: a, body: { roomId: room.id, ...stay(0), guests: 1, specialRequests: 'ขอสัดส่วนห้องกว้าง และหีบใส่ของ' } });
   check('คำปกติ ("สัดส่วน", "หีบ") ผ่าน', polite.status === 201, polite.status === 201 ? polite.data.booking.reference : polite.data?.message);
   if (polite.status === 201) created.push({ id: polite.data.booking.id, cookie: a });
@@ -124,15 +128,21 @@ async function main() {
   check('คำขอที่ 1–10 ผ่านเข้าไปถึง API (404 ไม่พบการจอง)', burst.slice(0, 10).every((r) => r.status === 404));
   check('คำขอที่ 11 ถูกบล็อก (429) พร้อมบอกเวลารอ', burst[10].status === 429 && Boolean(burst[10].res.headers.get('retry-after')), burst[10].data?.message);
 
-  console.log('\n=== 5) คำหยาบในความคิดเห็นรีวิว ===');
+  console.log('\n=== 5) คำหยาบ/สแปมในความคิดเห็นรีวิว ===');
   // ตัวกรองอยู่หน้า module รีวิว จึงตรวจก่อนเช็กสิทธิ์การรีวิว — ใช้ bookingId ปลอมทดสอบได้โดยไม่สร้างข้อมูลจริง
   const f = await newUser('f');
   const rudeReview = await call('/reviews', { method: 'POST', cookie: f, body: { bookingId: 999999, rating: 1, comment: 'ห้องแย่ ไอ้เหี้ย' } });
   check('รีวิวที่มีคำหยาบถูกปฏิเสธ (400)', rudeReview.status === 400 && /ไม่สุภาพ/.test(rudeReview.data?.message), rudeReview.data?.message);
   const rudeEdit = await call('/reviews/999999', { method: 'PUT', cookie: f, body: { comment: 's h i t service' } });
   check('แก้ไขรีวิวเป็นคำหยาบก็ถูกปฏิเสธ (400)', rudeEdit.status === 400 && /ไม่สุภาพ/.test(rudeEdit.data?.message), rudeEdit.data?.message);
+  const spamReview = await call('/reviews', { method: 'POST', cookie: f, body: { bookingId: 999999, rating: 1, comment: 'ก'.repeat(120) } });
+  check('รีวิว "กกกก…" ยาวๆ (สแปม) ถูกปฏิเสธ (400)', spamReview.status === 400 && /ติดกันเกิน/.test(spamReview.data?.message), spamReview.data?.message);
+  const spamEdit = await call('/reviews/999999', { method: 'PUT', cookie: f, body: { comment: 'asd asd asd asd asd asd asd' } });
+  check('แก้ไขรีวิวเป็นคำเดิมซ้ำๆ ก็ถูกปฏิเสธ (400)', spamEdit.status === 400 && /ซ้ำ/.test(spamEdit.data?.message), spamEdit.data?.message);
   const cleanReview = await call('/reviews', { method: 'POST', cookie: f, body: { bookingId: 999999, rating: 5, comment: 'สัดส่วนห้องดี บริการเยี่ยม' } });
   check('รีวิวสุภาพผ่านตัวกรองไปถึง module รีวิว (ได้ 403 เพราะ booking ปลอม)', cleanReview.status === 403, cleanReview.data?.message);
+  const excited = await call('/reviews', { method: 'POST', cookie: f, body: { bookingId: 999999, rating: 5, comment: 'ดีมากกกกกกก ห้องสะอาด พนักงานตลก 55555' } });
+  check('รีวิวยืดเสียง/หัวเราะแบบปกติ ("มากกกก", "555") ไม่โดนตัวกรองสแปม (ได้ 403)', excited.status === 403, excited.data?.message);
 
   console.log('\n=== 6) PDPA: รายการรีวิวสาธารณะไม่เปิดเผยชื่อเต็ม ===');
   const publicReviews = (await call(`/reviews?hotelId=${hotel.id}`)).data.reviews;
@@ -140,6 +150,21 @@ async function main() {
   const noIds = publicReviews.every((r) => !r.user || r.user.id === undefined);
   check('ชื่อผู้รีวิวเป็นแบบย่อ (เช่น "Ploy S.")', shortNames, publicReviews.map((r) => r.user?.name).join(', '));
   check('ไม่ส่ง user id ของผู้รีวิวออกไป', noIds);
+
+  console.log('\n=== 7) ตัวกรองสแปม: ตัวอย่างข้อความ (เรียก findSpam ตรงๆ) ===');
+  const spamSamples = [
+    'ก'.repeat(40), 'กกกกกกกกกก', 'ก ก ก ก ก ก ก ก ก ก ก ก', 'asdasdasdasdasdasdasd', 'ดีดีดีดีดีดีดีดีดีดี', '5555555555',
+    '!!!!!!!!!!!!', '😂😂😂😂😂😂😂😂😂😂', `ห้องดี ${'asd'.repeat(12)}`, 'กขกขขกกขกขกขขกขกขกขกข',
+  ];
+  const normalSamples = [
+    'ดี', 'ok', '👍👍👍', 'ดีมากกกกกกก ห้องสะอาด พนักงานน่ารัก', 'ชอบบบบบบบบบ', 'โอเคคคคคคคค', 'พนักงานตลกมาก 555555 แต่ห้องดีนะ',
+    'ดีมาก ดีมาก ดีมาก', 'ขอบคุณค่ะ ❤️❤️❤️❤️❤️', 'ห้องโอเค..........แต่แอร์เสียงดัง', 'ขอใบกำกับภาษี เลขผู้เสียภาษี 0105555555555',
+    '99/9 หมู่ 9 ถนนสุขุมวิท กรุงเทพฯ 10110',
+  ];
+  const missed = spamSamples.filter((text) => !findSpam(text));
+  const blockedWrongly = normalSamples.filter((text) => findSpam(text));
+  check(`ข้อความสแปม ${spamSamples.length} แบบถูกบล็อกครบ ("กกกก", "asdasd", "55555", "!!!!", อีโมจิซ้ำ, เว้นวรรคคั่น)`, missed.length === 0, missed.join(' | '));
+  check(`ข้อความปกติ ${normalSamples.length} แบบไม่โดนบล็อก (ยืดเสียง, หัวเราะ 555, เลขที่อยู่/เลขภาษี)`, blockedWrongly.length === 0, blockedWrongly.join(' | '));
 
   // เก็บกวาด — ยกเลิกการจองทดสอบที่ยังค้างอยู่ (ตัวที่ยกเลิกไปแล้วจะได้ 409 ไม่เป็นไร)
   await Promise.all(created.map(({ id, cookie }) => call(`/bookings/${id}/cancel`, { method: 'POST', cookie })));

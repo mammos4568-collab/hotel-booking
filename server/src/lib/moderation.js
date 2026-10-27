@@ -1,7 +1,8 @@
 // ============================================================
-// ตรวจถ้อยคำไม่สุภาพ — คำขอพิเศษ, รีวิว, ข้อมูลโรงแรม/ห้องที่เจ้าของกรอก (ชื่อ คำอธิบาย ที่อยู่)
+// ตรวจถ้อยคำไม่สุภาพ + ข้อความสแปม — คำขอพิเศษ, รีวิว, ข้อมูลโรงแรม/ห้องที่เจ้าของกรอก (ชื่อ คำอธิบาย ที่อยู่)
 //   findProfanity()       = คำหยาบชัดเจน → ไม่ให้บันทึก
 //   findSuspiciousWords() = คำก้ำกึ่ง (อาจเป็นคำปกติ/ชื่อจริงได้) → บันทึกได้ แต่ขึ้นเตือนให้ admin ดูตอนอนุมัติโรงแรม
+//   findSpam()            = พิมพ์ซ้ำๆ ไม่มีเนื้อหา ("กกกกกกกก", "asdasdasd") → ไม่ให้บันทึก (ดูคำอธิบายที่ฟังก์ชัน)
 // ============================================================
 //
 // ภาษาไทยไม่เว้นวรรคระหว่างคำ ถ้าค้นแบบ includes() ตรงๆ จะติดคำปกติ
@@ -180,15 +181,50 @@ export function containsProfanity(text) {
   return findProfanity(text).length > 0;
 }
 
+// ------------------------------------------------------------
+// ข้อความสแปม — พิมพ์ซ้ำๆ ไม่มีเนื้อหาให้คนอ่าน เช่น "กกกกกกกก", "asdasdasd", "!!!!!!!!", "ดีดีดีดีดี"
+// ------------------------------------------------------------
+// ไม่ได้ตรวจว่าเป็นคำที่มีความหมายไหม (พิมพ์ผิดไม่ใช่สแปม) แต่ดู "รูปแบบ" ที่คนเขียนจริงไม่ทำ
+// ตัดช่องว่างทิ้งก่อนตรวจ — เว้นวรรคคั่น "ก ก ก ก" จึงเลี่ยงไม่ได้
+// สั้นกว่า 10 ตัวไม่ตรวจ — "ดี", "ok", "👍👍👍" ผ่านได้
+const SPAM_MIN_LENGTH = 10;
+const MAX_SAME_CHAR_RUN = 15; // ยืดเสียง "มากกกกก" ได้ แต่ตัวเดียวกันติดกันเกิน 15 ตัว = สแปม
+const SAME_CHAR_RUN = new RegExp(`(.)\\1{${MAX_SAME_CHAR_RUN},}`, 'u');
+const REPEATED_CHUNK = /(.{1,10}?)\1{2,}/gu; // ชิ้นยาว 1–10 ตัวที่ซ้ำติดกันตั้งแต่ 3 รอบ เช่น "asd|asd|asd"
+const CONTENT_CHAR = /[\p{L}\p{M}\p{N}]/gu;  // ตัวอักษรทุกภาษา (รวมสระ/วรรณยุกต์ไทย) + ตัวเลข — ไม่นับเครื่องหมาย/อีโมจิ
+
+// คืนเหตุผลเป็นภาษาไทย ไว้ต่อท้ายชื่อช่อง เช่น "คำขอพิเศษ" + "มีตัวอักษรเดียวกัน..." · null = ไม่ใช่สแปม
+export function findSpam(text) {
+  if (!text) return null;
+  const value = normalize(text).replace(/\s+/gu, '');
+  const length = [...value].length; // นับทีละตัวอักษร (อีโมจิ 1 ตัว = 1 ไม่ใช่ 2)
+  if (length < SPAM_MIN_LENGTH) return null;
+
+  // 1) ตัวเดียวกันติดกันยาวเกินไป
+  if (SAME_CHAR_RUN.test(value)) return `มีตัวอักษรเดียวกันติดกันเกิน ${MAX_SAME_CHAR_RUN} ตัว`;
+
+  // 2) ยุบชิ้นที่ซ้ำให้เหลือรอบเดียว ("asdasdasd" → "asd", "ดีดีดีดี" → "ดี") แล้วดูว่าเหลือเนื้อหาเท่าไร
+  const collapsed = value.replace(REPEATED_CHUNK, '$1');
+  const contentLeft = collapsed.match(CONTENT_CHAR)?.length ?? 0;
+  const kinds = new Set(value.match(CONTENT_CHAR)).size;
+  const repeated =
+    contentLeft < 3                                            // ยุบแล้วแทบไม่เหลือ: "กกกกกกกกกก", "5555555555", "!!!!!!!!!!"
+    || (length >= 20 && [...collapsed].length < length * 0.3)  // ยาว แต่กว่า 70% เป็นส่วนที่ซ้ำ: "ห้องดี asdasdasdasd..."
+    || (length >= 20 && kinds <= 3);                           // ยาว แต่ใช้ตัวอักษรแค่ 1–3 แบบ: "กขกขขกกขกขข..."
+  return repeated ? 'เป็นตัวอักษรหรือคำเดิมซ้ำๆ ไม่มีเนื้อหาให้อ่าน' : null;
+}
+
 // middleware: ตรวจช่องข้อความใน body ก่อนส่งต่อให้ route ข้างหลัง (ใช้กับ POST/PUT/PATCH)
+//   มีคำไม่สุภาพ → ตอบ message ที่ส่งมา · เป็นข้อความสแปม (findSpam) → ตอบเหตุผลที่เจอ
 // ใช้ครอบ route ของ module อื่นได้โดยไม่ต้องแก้ไฟล์ของ module นั้น เช่น
 //   app.use('/api/reviews', rejectProfanity('comment', 'ข้อความ...'), reviewRoutes)
 export function rejectProfanity(field, message) {
   return (req, res, next) => {
     const value = req.body?.[field];
-    if (['POST', 'PUT', 'PATCH'].includes(req.method) && typeof value === 'string' && containsProfanity(value)) {
-      return res.status(400).json({ message });
-    }
+    if (!['POST', 'PUT', 'PATCH'].includes(req.method) || typeof value !== 'string') return next();
+    if (containsProfanity(value)) return res.status(400).json({ message });
+    const spam = findSpam(value);
+    if (spam) return res.status(400).json({ message: `ข้อความ${spam} กรุณาแก้ไขก่อนส่ง` });
     next();
   };
 }

@@ -62,7 +62,7 @@ npm install              # ครั้งแรกครั้งเดีย�
 npm run dev              # server :3000 + client :5173 พร้อมกัน
 node server/test/concurrent-booking.js   # ทดสอบจองพร้อมกัน (เปิด server ก่อน)
 node server/test/multi-room.js           # จองหลายห้อง + จองพร้อมกันแบบหลายห้อง
-node server/test/protection.js           # ทดสอบ rate limit / เพดานจองค้าง / จ่ายผิด / คำหยาบ
+node server/test/protection.js           # ทดสอบ rate limit / เพดานจองค้าง / จ่ายผิด / คำหยาบ / ข้อความสแปม
 node server/test/favorites.js            # รายการโปรด
 node server/test/payment-methods.js      # วิธีชำระเงิน บัตร / PromptPay / TrueMoney Wallet (จำลอง · ตั้ง key Opn แล้วทดสอบผ่าน Opn + จำลองว่าลูกค้าจ่าย PromptPay)
 node server/test/promptpay.js            # PromptPay เงินจริง 19 ข้อ (ข้อความใน QR + เฉพาะ admin · ส่วน admin ต้องตั้ง PROMPTPAY_ID)
@@ -70,7 +70,7 @@ node server/test/assistant.js            # ผู้ช่วยแนะนำ�
 node server/test/admin.js                # หลังบ้าน 76 ข้อ (อ่าน server/.env เอง เพื่อตั้ง admin + ล้างข้อมูลทดสอบ)
 node server/test/avatar.js               # รูปโปรไฟล์ 18 ข้อ (ตรวจไฟล์, ลิงก์รหัสสุ่ม, สำเนาข้อมูล, ลบบัญชี · อ่าน server/.env เอง)
 node server/test/hotel-images.js         # รูปโรงแรม + รูปห้อง 43 ข้อ (สูงสุด 5 รูป, ตรวจไฟล์, อัปพร้อมกัน · อ่าน server/.env เอง)
-node server/test/hotel-approval.js       # อนุมัติโรงแรม + คำหยาบ/ทับศัพท์ 56 ข้อ (อ่าน server/.env เอง)
+node server/test/hotel-approval.js       # อนุมัติโรงแรม + คำหยาบ/ทับศัพท์/สแปม 57 ข้อ (อ่าน server/.env เอง)
 node --env-file=server/.env server/scripts/set-role.js <email> admin   # ตั้ง/ถอด admin ได้ทางนี้ทางเดียว (owner: เพิ่ม --hotels=1,2)
 ```
 
@@ -110,8 +110,8 @@ node --env-file=server/.env server/scripts/set-role.js <email> admin   # ตั�
 - ผู้ช่วยแนะนำที่พักทำเองแบบกฎ + คำสำคัญ (ไม่ใช้ AI ภายนอก ไม่มี API key) · คำใหม่เพิ่มที่
   `modules/assistant/lexicon.js` แล้วเพิ่มประโยคทดสอบใน `server/test/assistant.js` · ไม่บันทึกข้อความแชท
 - endpoint ใหม่ที่รับข้อความจากผู้ใช้หรือทำงานหนัก ให้ใส่ `rateLimit()` (`lib/rateLimit.js`) และ
-  ข้อความที่คนอื่นจะเห็นให้ตรวจด้วย `containsProfanity()` / middleware `rejectProfanity()` (`lib/moderation.js`)
-  — ความคิดเห็นรีวิวกรองแบบครอบ route ใน `index.js` อยู่แล้ว
+  ข้อความที่คนอื่นจะเห็นให้ตรวจด้วย `containsProfanity()` + `findSpam()` (พิมพ์ซ้ำๆ ไม่มีเนื้อหา) หรือ middleware `rejectProfanity()`
+  (ตรวจให้ทั้งสองอย่าง · `lib/moderation.js`) — ความคิดเห็นรีวิวกรองแบบครอบ route ใน `index.js` อยู่แล้ว
 - PDPA: เก็บข้อมูลส่วนบุคคลเท่าที่จำเป็น · ห้าม log body/cookie/ข้อมูลส่วนตัว · เปลี่ยนวิธีเก็บ/ใช้ข้อมูลเมื่อไหร่
   ต้องแก้หน้า `client/src/pages/legal/PrivacyPage.jsx` ให้ตรงด้วย · ขอสำเนาข้อมูล/ลบบัญชีอยู่ที่ `modules/privacy/`
   (ข้อมูลใหม่ที่ผูกกับผู้ใช้ต้องใส่ใน export และจัดการตอนลบบัญชีด้วย) · สรุปงาน PDPA อยู่ที่ `docs/booking.md` ข้อ 9

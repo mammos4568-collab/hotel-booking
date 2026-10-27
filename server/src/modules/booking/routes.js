@@ -9,7 +9,7 @@ import { publicHotelSql } from '../../lib/hotelApproval.js';
 import { hotelCoverSql, roomCoverSql } from '../../lib/hotelImages.js';
 import { todayInBangkok, validateStay } from '../../lib/dates.js';
 import { rateLimit } from '../../lib/rateLimit.js';
-import { containsProfanity } from '../../lib/moderation.js';
+import { containsProfanity, findSpam } from '../../lib/moderation.js';
 import {
   QR_EXPIRY_BUFFER_MS, QR_MIN_SCAN_MS, chargeOutcome, createPromptPayCharge, createTrueMoneyCharge, downloadQrImage,
   opnCanRefund, opnEnabled, opnTestMode, promptpayExpiry, refundCharge, retrieveCharge,
@@ -171,10 +171,12 @@ router.post('/', requireAuth, createLimiter, async (req, res, next) => {
   if (!EMAIL_PATTERN.test(guestEmail) || guestEmail.length > 255) return next(httpError(400, 'อีเมลผู้เข้าพักไม่ถูกต้อง'));
   if (guestPhone.length > 50) return next(httpError(400, 'เบอร์โทรยาวเกินไป'));
   if (specialRequests.length > 500) return next(httpError(400, 'คำขอพิเศษต้องไม่เกิน 500 ตัวอักษร'));
-  // คำขอพิเศษจะถูกส่งถึงพนักงานโรงแรม — ไม่รับข้อความที่มีถ้อยคำไม่สุภาพ (ดู lib/moderation.js)
+  // คำขอพิเศษจะถูกส่งถึงพนักงานโรงแรม — ไม่รับข้อความที่มีถ้อยคำไม่สุภาพ หรือพิมพ์ซ้ำๆ ไม่มีเนื้อหา (ดู lib/moderation.js)
   if (containsProfanity(specialRequests)) {
     return next(httpError(400, 'คำขอพิเศษมีถ้อยคำที่ไม่สุภาพ กรุณาแก้ไขก่อนส่ง'));
   }
+  const spam = findSpam(specialRequests);
+  if (spam) return next(httpError(400, `คำขอพิเศษ${spam} กรุณาแก้ไขก่อนส่ง`));
 
   // 2) ทุกคำสั่งต้องวิ่งบน connection เดียวกัน transaction ถึงจะทำงาน
   //    (pool.query แต่ละครั้งอาจได้คนละ connection → BEGIN/COMMIT ไม่ครอบคำสั่งอื่น)

@@ -1,11 +1,11 @@
 // ตรวจข้อมูลที่หลังบ้านส่งมา — รับเฉพาะค่าที่ถูกต้อง แล้วแปลงเป็นค่าที่พร้อมบันทึกลงฐานข้อมูล
-// ข้อความที่ลูกค้าจะเห็นบนหน้าเว็บ (ชื่อ คำอธิบาย) ตรวจคำไม่สุภาพด้วย
+// ข้อความที่ลูกค้าจะเห็นบนหน้าเว็บ (ชื่อ คำอธิบาย) ตรวจคำไม่สุภาพ + ข้อความสแปมด้วย
 import { AMENITY_KEYS, PROPERTY_TYPES, parseList } from '../../lib/hotelSearch.js';
-import { findProfanity } from '../../lib/moderation.js';
+import { findProfanity, findSpam } from '../../lib/moderation.js';
 import { httpError } from './scope.js';
 
-// publicText = ข้อความที่ลูกค้าเห็นบนหน้าเว็บ → มีคำหยาบชัดเจนบันทึกไม่ได้ (บอกคำที่เจอ จะได้แก้ถูกจุด)
-// คำก้ำกึ่งไม่บล็อกที่นี่ — admin เห็นคำเตือนตอนอนุมัติโรงแรม (findSuspiciousWords ใน hotels.js)
+// publicText = ข้อความที่ลูกค้าเห็นบนหน้าเว็บ → มีคำหยาบชัดเจน หรือพิมพ์ซ้ำๆ ไม่มีเนื้อหา บันทึกไม่ได้
+// (บอกคำ/เหตุผลที่เจอ จะได้แก้ถูกจุด) · คำก้ำกึ่งไม่บล็อกที่นี่ — admin เห็นคำเตือนตอนอนุมัติโรงแรม (findSuspiciousWords ใน hotels.js)
 function text(value, label, { min = 0, max, required = false, publicText = false } = {}) {
   const result = String(value ?? '').trim();
   if (!result && required) throw httpError(400, `กรุณากรอก${label}`);
@@ -14,6 +14,8 @@ function text(value, label, { min = 0, max, required = false, publicText = false
   if (publicText) {
     const bad = findProfanity(result);
     if (bad.length) throw httpError(400, `${label}มีคำที่ไม่สุภาพ (${bad.map((word) => `"${word}"`).join(', ')}) — แก้แล้วบันทึกใหม่`);
+    const spam = findSpam(result);
+    if (spam) throw httpError(400, `${label}${spam} — แก้แล้วบันทึกใหม่`);
   }
   return result || null;
 }
