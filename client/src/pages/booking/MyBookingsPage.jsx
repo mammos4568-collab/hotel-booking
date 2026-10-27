@@ -9,7 +9,7 @@ import EmptyState from '../../components/EmptyState.jsx';
 import { PageLoader } from '../../components/Loading.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { cityLabel, formatDate } from '../../lib/format.js';
-import { STATUS_META, cancelNote } from './bookingStatus.js';
+import { STATUS_META, cancelDeadlineNote, cancelNote } from './bookingStatus.js';
 
 const TABS = [
   { key: 'upcoming', statuses: ['awaiting_payment', 'confirmed'] },
@@ -21,6 +21,7 @@ function BookingCard({ booking, onCancel }) {
   const { lang, tx, formatPrice } = useLanguage();
   const meta = STATUS_META[booking.status];
   const dateOpts = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' };
+  const deadline = cancelDeadlineNote(booking, tx, lang);
 
   return (
     <article className="flex animate-slide-up flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white transition hover:shadow-lg hover:shadow-slate-900/5 sm:flex-row">
@@ -59,6 +60,13 @@ function BookingCard({ booking, onCancel }) {
           </div>
         </div>
 
+        {!booking.canCancel && deadline && (
+          // จ่ายแล้วแต่ถึงวันเช็กอินแล้ว — บอกให้ชัดว่าใบนี้ยกเลิกเองไม่ได้เพราะอะไร และต้องทำยังไง (ไม่ใช่ซ่อนปุ่มเฉยๆ)
+          <p className="flex items-start gap-2 rounded-2xl bg-amber-50 px-3 py-2.5 text-sm text-amber-900 ring-1 ring-amber-200">
+            <Icon name="info" className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />{deadline}
+          </p>
+        )}
+
         <div className="flex flex-wrap items-center gap-2">
           {booking.canPay && (
             <Link to={`/checkout/pay/${booking.id}`} className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white shadow-md shadow-brand-600/25 hover:bg-brand-700">
@@ -78,13 +86,18 @@ function BookingCard({ booking, onCancel }) {
               <Icon name="arrow-right" className="h-4 w-4" />{tx('จองอีกครั้ง', 'Book again')}
             </Link>
           )}
-          {booking.canCancel ? (
-            <button type="button" onClick={() => onCancel(booking)} className="ml-auto inline-flex items-center gap-1.5 rounded-xl border border-rose-200 px-3 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50">
-              <Icon name="x" className="h-4 w-4" />{tx('ยกเลิกการจอง', 'Cancel booking')}
-            </button>
-          ) : booking.status === 'confirmed' && (
-            // จ่ายแล้วแต่ถึงวันเช็กอินแล้ว — บอกเหตุผล ไม่ใช่ซ่อนปุ่มเฉยๆ
-            <p className="ml-auto text-xs text-slate-500">{tx('ยกเลิกได้ก่อนวันเช็กอินเท่านั้น', 'Cancellable until the day before check-in')}</p>
+          {booking.canCancel && (
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+              {/* จ่ายแล้ว → บอกวันสุดท้ายที่ยกเลิกได้ · ยังไม่จ่ายไม่มีกำหนด (deadline = null) */}
+              {deadline && (
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                  <Icon name="shield" className="h-3.5 w-3.5" />{deadline}
+                </span>
+              )}
+              <button type="button" onClick={() => onCancel(booking)} className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 px-3 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50">
+                <Icon name="x" className="h-4 w-4" />{tx('ยกเลิกการจอง', 'Cancel booking')}
+              </button>
+            </div>
           )}
         </div>
       </div>

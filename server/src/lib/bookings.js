@@ -3,7 +3,7 @@
 // ใช้ร่วมกันระหว่างฝั่งลูกค้า (modules/booking) และหลังบ้าน (modules/admin) — สถานะจะได้ตรงกันทุกหน้า
 // ============================================================
 import { HOLD_MINUTES } from './availability.js';
-import { todayInBangkok } from './dates.js';
+import { addDays, todayInBangkok } from './dates.js';
 import { hotelCoverSql, roomCoverSql } from './hotelImages.js';
 import { opnCanRefund, refundCharge, retrieveCharge } from './opn.js';
 
@@ -56,6 +56,9 @@ export const BOOKING_STATUS_SQL = `
 export function serializeBooking(row) {
   const today = todayInBangkok();
   const status = deriveStatus(row, today);
+  // จ่ายแล้วยกเลิกเองได้ถึง "วันก่อนเช็กอิน" — ส่งวันนี้ให้หน้าเว็บแสดง ("ยกเลิกฟรีได้ถึง ...") กฎจะได้อยู่ที่ server ที่เดียว
+  // ยังไม่จ่าย = ไม่มีกำหนด (ยกเลิกได้ตลอด) · ยกเลิก/เข้าพักแล้ว = ไม่เกี่ยว
+  const cancelDeadline = status === 'confirmed' ? addDays(row.check_in, -1) : null;
   return {
     id: row.booking_id,
     reference: row.booking_reference,
@@ -98,8 +101,9 @@ export function serializeBooking(row) {
       : null,
     hasReview: row.has_review,
     canPay: status === 'awaiting_payment',
-    // ยกเลิกเองได้: รอชำระ = ได้ตลอด (แค่ปล่อยห้องที่ถือไว้ ไม่มีเงินต้องคืน) · จ่ายแล้ว = ก่อนวันเช็กอินเท่านั้น
-    canCancel: status === 'awaiting_payment' || (status === 'confirmed' && row.check_in > today),
+    cancelDeadline,
+    // ยกเลิกเองได้: รอชำระ = ได้ตลอด (แค่ปล่อยห้องที่ถือไว้ ไม่มีเงินต้องคืน) · จ่ายแล้ว = ถึงวันก่อนเช็กอิน (cancelDeadline)
+    canCancel: status === 'awaiting_payment' || (status === 'confirmed' && today <= cancelDeadline),
     canReview: status === 'completed' && !row.has_review && String(row.payment_status).toLowerCase() === 'paid',
   };
 }

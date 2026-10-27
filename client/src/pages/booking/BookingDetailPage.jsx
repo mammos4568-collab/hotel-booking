@@ -9,7 +9,7 @@ import EmptyState from '../../components/EmptyState.jsx';
 import { PageLoader } from '../../components/Loading.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { formatDate, formatDateTime } from '../../lib/format.js';
-import { STATUS_META, cancelNote, paymentLabel, paymentMethodLabel } from './bookingStatus.js';
+import { STATUS_META, cancelDeadlineNote, cancelNote, paymentLabel, paymentMethodLabel } from './bookingStatus.js';
 
 // ใช้ 2 แบบ: /booking/success/:id (หลังจ่ายเงินเสร็จ) และ /bookings/:id (ดูรายละเอียดจากหน้าการจองของฉัน)
 export default function BookingDetailPage({ justBooked = false }) {
@@ -61,6 +61,7 @@ export default function BookingDetailPage({ justBooked = false }) {
 
   const meta = STATUS_META[booking.status];
   const success = justBooked && booking.status === 'confirmed';
+  const deadline = cancelDeadlineNote(booking, tx, lang);
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -164,12 +165,21 @@ export default function BookingDetailPage({ justBooked = false }) {
             </Link>
           </div>
           {booking.canCancel ? (
-            <button type="button" onClick={() => setConfirmCancel(true)} className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-white px-4 py-2.5 text-sm font-bold text-rose-600 hover:bg-rose-50">
-              <Icon name="x" className="h-4 w-4" />{tx('ยกเลิกการจองนี้', 'Cancel this booking')}
-            </button>
-          ) : booking.status === 'confirmed' && (
-            // จ่ายแล้วแต่ถึงวันเช็กอินแล้ว — บอกเหตุผล ไม่ใช่ซ่อนปุ่มเฉยๆ
-            <p className="text-sm text-slate-500">{tx('ยกเลิกไม่ได้แล้ว — การจองที่ชำระแล้วยกเลิกได้ก่อนวันเช็กอินเท่านั้น', 'This booking can no longer be cancelled — paid bookings can be cancelled until the day before check-in.')}</p>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <button type="button" onClick={() => setConfirmCancel(true)} className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-white px-4 py-2.5 text-sm font-bold text-rose-600 hover:bg-rose-50">
+                <Icon name="x" className="h-4 w-4" />{tx('ยกเลิกการจองนี้', 'Cancel this booking')}
+              </button>
+              {deadline && (
+                <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700">
+                  <Icon name="shield" className="h-4 w-4" />{deadline}
+                </span>
+              )}
+            </div>
+          ) : deadline && (
+            // จ่ายแล้วแต่ถึงวันเช็กอินแล้ว — บอกเหตุผล + ทางออก (ติดต่อที่พัก) ไม่ใช่ซ่อนปุ่มเฉยๆ
+            <p className="flex items-start gap-2 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
+              <Icon name="info" className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />{deadline}
+            </p>
           )}
         </div>
 

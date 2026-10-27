@@ -63,13 +63,17 @@ ok(promptpayExpiry(new Date(holdEnd), holdEnd - 119_000) === null && promptpayEx
 ok(!opnCanRefund('promptpay') && opnCanRefund('truemoney'), 'PromptPay คืนเงินผ่าน Opn ไม่ได้ · TrueMoney คืนได้');
 ok(needsManualRefund('promptpay', true) && !needsManualRefund('promptpay', false) && needsManualRefund('promptpay_live', false)
   && !needsManualRefund('truemoney', true), 'ต้องโอนคืนเอง = PromptPay ผ่าน Opn + PromptPay เงินจริง (แบบจำลอง/TrueMoney ไม่ต้อง)');
-// ยกเลิกเอง: รอชำระยกเลิกได้ตลอด (แค่ปล่อยห้อง) · จ่ายแล้วยกเลิกได้ก่อนวันเช็กอินเท่านั้น
+// ยกเลิกเอง: รอชำระยกเลิกได้ตลอด (แค่ปล่อยห้อง) · จ่ายแล้วยกเลิกได้ถึงวันก่อนเช็กอิน (cancelDeadline ที่หน้าเว็บแสดง)
 const todayTh = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
 const stayToday = { booking_status: 'Confirmed', check_in: todayTh, check_out: addDays(todayTh, 1), hold_expires_at: new Date(Date.now() + 10 * 60_000) };
-ok(serializeBooking({ ...stayToday, payment_status: 'Pending' }).canCancel === true, 'รอชำระ + เข้าพักวันนี้ → ยกเลิกได้ (แค่ปล่อยห้องที่ถือไว้)');
-ok(serializeBooking({ ...stayToday, payment_status: 'Paid' }).canCancel === false, 'จ่ายแล้ว + เข้าพักวันนี้ → ยกเลิกเองไม่ได้');
-ok(serializeBooking({ ...stayToday, payment_status: 'Paid', check_in: addDays(todayTh, 1), check_out: addDays(todayTh, 2) }).canCancel === true,
-  'จ่ายแล้ว + เข้าพักพรุ่งนี้ → ยกเลิกได้');
+const unpaidToday = serializeBooking({ ...stayToday, payment_status: 'Pending' });
+ok(unpaidToday.canCancel === true && unpaidToday.cancelDeadline === null, 'รอชำระ + เข้าพักวันนี้ → ยกเลิกได้ (แค่ปล่อยห้องที่ถือไว้) ไม่มีกำหนดยกเลิก');
+const paidToday = serializeBooking({ ...stayToday, payment_status: 'Paid' });
+ok(paidToday.canCancel === false && paidToday.cancelDeadline === addDays(todayTh, -1), 'จ่ายแล้ว + เข้าพักวันนี้ → ยกเลิกเองไม่ได้ (กำหนดยกเลิกคือเมื่อวาน)',
+  JSON.stringify(paidToday.cancelDeadline));
+const paidTomorrow = serializeBooking({ ...stayToday, payment_status: 'Paid', check_in: addDays(todayTh, 1), check_out: addDays(todayTh, 2) });
+ok(paidTomorrow.canCancel === true && paidTomorrow.cancelDeadline === todayTh, 'จ่ายแล้ว + เข้าพักพรุ่งนี้ → ยกเลิกได้ถึงวันนี้',
+  JSON.stringify(paidTomorrow.cancelDeadline));
 
 const password = randomUUID();
 const registered = await call('/auth/register', {

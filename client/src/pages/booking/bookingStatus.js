@@ -1,3 +1,5 @@
+import { formatDate } from '../../lib/format.js';
+
 // ป้ายสถานะการจอง (status มาจาก server: awaiting_payment · confirmed · completed · cancelled · expired)
 export const STATUS_META = {
   awaiting_payment: { label: (tx) => tx('รอชำระเงิน', 'Awaiting payment'), className: 'bg-amber-100 text-amber-800' },
@@ -31,6 +33,20 @@ export function cancelNote(booking, tx, formatPrice) {
     return tx(`การจองนี้จ่ายด้วย PromptPay ผ่าน Opn ซึ่งคืนเงินอัตโนมัติไม่ได้ — ผู้ดูแลระบบจะโอนคืน ${amount} ให้ภายหลัง และห้องจะถูกปล่อยให้ผู้อื่นจอง`, `This booking was paid with PromptPay via Opn, which can't be refunded automatically — an admin will transfer ${amount} back to you later. The room will be released.`);
   }
   return tx(`ระบบจะคืนเงิน ${amount} ไปยังช่องทางที่ชำระ และห้องจะถูกปล่อยให้ผู้อื่นจอง`, `We'll refund ${amount} to your original payment method and release the room.`);
+}
+
+// กำหนดยกเลิกของการจองที่จ่ายแล้ว (cancelDeadline มาจาก server = วันก่อนเช็กอิน) → ข้อความที่แสดง
+//   ยังยกเลิกได้  → "ยกเลิกฟรีได้ถึง อ. 27 ต.ค. 2569" (แสดงข้างปุ่มยกเลิก)
+//   เลยกำหนดแล้ว → บอกว่าทำไมยกเลิกเองไม่ได้ + ให้ติดต่อที่พัก (แสดงแทนปุ่ม)
+// ยังไม่จ่าย (ยกเลิกได้ตลอด) / ยกเลิกแล้ว / เข้าพักแล้ว → null
+export function cancelDeadlineNote(booking, tx, lang) {
+  if (booking.status !== 'confirmed' || !booking.cancelDeadline) return null;
+  const date = formatDate(booking.cancelDeadline, lang, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  if (booking.canCancel) return tx(`ยกเลิกฟรีได้ถึง ${date}`, `Free cancellation until ${date}`);
+  return tx(
+    `ยกเลิกเองไม่ได้แล้ว เพราะถึงวันเช็กอินแล้ว (ยกเลิกได้ถึง ${date}) — หากจำเป็นต้องยกเลิก กรุณาติดต่อที่พักโดยตรง`,
+    `You can no longer cancel this booking yourself because check-in day has arrived (cancellation was open until ${date}). If you need to cancel, please contact the property directly.`,
+  );
 }
 
 // payment_status ในฐานข้อมูล (Pending / Paid / Refunded / Expired) → ข้อความที่แสดง
