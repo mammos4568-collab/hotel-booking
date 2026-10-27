@@ -18,6 +18,21 @@ export function paymentMethodLabel(method, cardLast4, tx, viaGateway = false) {
   return tx('ไม่ทราบวิธี', 'Unknown method');
 }
 
+// ข้อความในกล่องยืนยันการยกเลิก — บอกว่าห้องและเงินจะเป็นยังไง (ใช้ร่วมกันทุกหน้าที่มีปุ่มยกเลิก)
+export function cancelNote(booking, tx, formatPrice) {
+  const amount = formatPrice(booking.totalAmount);
+  if (booking.paymentStatus !== 'Paid') return tx('ห้องที่ถือไว้จะถูกปล่อยให้ผู้อื่นจอง', 'The held room will be released.');
+  if (booking.payment?.method === 'promptpay_live') {
+    // PromptPay เงินจริงโอนเข้าบัญชีตรง ไม่ผ่าน gateway → ระบบสั่งคืนเงินเองไม่ได้
+    return tx(`การจองนี้จ่ายด้วย PromptPay เงินจริง — ระบบโอนคืนอัตโนมัติไม่ได้ ต้องโอนคืน ${amount} เอง และห้องจะถูกปล่อยให้ผู้อื่นจอง`, `This booking was paid with real PromptPay — it can't be refunded automatically; transfer ${amount} back yourself. The room will be released.`);
+  }
+  if (booking.payment?.manualRefund) {
+    // PromptPay ผ่าน Opn: Opn คืนเงิน PromptPay ไม่ได้ → ผู้ดูแลระบบต้องโอนคืนเอง
+    return tx(`การจองนี้จ่ายด้วย PromptPay ผ่าน Opn ซึ่งคืนเงินอัตโนมัติไม่ได้ — ผู้ดูแลระบบจะโอนคืน ${amount} ให้ภายหลัง และห้องจะถูกปล่อยให้ผู้อื่นจอง`, `This booking was paid with PromptPay via Opn, which can't be refunded automatically — an admin will transfer ${amount} back to you later. The room will be released.`);
+  }
+  return tx(`ระบบจะคืนเงิน ${amount} ไปยังช่องทางที่ชำระ และห้องจะถูกปล่อยให้ผู้อื่นจอง`, `We'll refund ${amount} to your original payment method and release the room.`);
+}
+
 // payment_status ในฐานข้อมูล (Pending / Paid / Refunded / Expired) → ข้อความที่แสดง
 export function paymentLabel(status, tx) {
   const labels = {

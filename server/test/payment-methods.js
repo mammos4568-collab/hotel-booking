@@ -17,7 +17,7 @@
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { needsManualRefund } from '../src/lib/bookings.js';
+import { needsManualRefund, serializeBooking } from '../src/lib/bookings.js';
 import { chargeOutcome, opnCanRefund, promptpayExpiry, toSatang } from '../src/lib/opn.js';
 
 const API = process.env.API_URL || 'http://localhost:3000/api';
@@ -63,6 +63,13 @@ ok(promptpayExpiry(new Date(holdEnd), holdEnd - 119_000) === null && promptpayEx
 ok(!opnCanRefund('promptpay') && opnCanRefund('truemoney'), 'PromptPay คืนเงินผ่าน Opn ไม่ได้ · TrueMoney คืนได้');
 ok(needsManualRefund('promptpay', true) && !needsManualRefund('promptpay', false) && needsManualRefund('promptpay_live', false)
   && !needsManualRefund('truemoney', true), 'ต้องโอนคืนเอง = PromptPay ผ่าน Opn + PromptPay เงินจริง (แบบจำลอง/TrueMoney ไม่ต้อง)');
+// ยกเลิกเอง: รอชำระยกเลิกได้ตลอด (แค่ปล่อยห้อง) · จ่ายแล้วยกเลิกได้ก่อนวันเช็กอินเท่านั้น
+const todayTh = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
+const stayToday = { booking_status: 'Confirmed', check_in: todayTh, check_out: addDays(todayTh, 1), hold_expires_at: new Date(Date.now() + 10 * 60_000) };
+ok(serializeBooking({ ...stayToday, payment_status: 'Pending' }).canCancel === true, 'รอชำระ + เข้าพักวันนี้ → ยกเลิกได้ (แค่ปล่อยห้องที่ถือไว้)');
+ok(serializeBooking({ ...stayToday, payment_status: 'Paid' }).canCancel === false, 'จ่ายแล้ว + เข้าพักวันนี้ → ยกเลิกเองไม่ได้');
+ok(serializeBooking({ ...stayToday, payment_status: 'Paid', check_in: addDays(todayTh, 1), check_out: addDays(todayTh, 2) }).canCancel === true,
+  'จ่ายแล้ว + เข้าพักพรุ่งนี้ → ยกเลิกได้');
 
 const password = randomUUID();
 const registered = await call('/auth/register', {
@@ -186,6 +193,17 @@ try {
   const mastercard = await pay(otherBooking, { ...testCard, cardNumber: '5555 5555 5555 4444' });
   ok(mastercard.status === 200 && mastercard.data.booking.payment?.cardLast4 === '4444',
     'บัตรทดสอบ Mastercard 5555…4444 ผ่าน', JSON.stringify(mastercard.data));
+
+  // จองเข้าพักวันนี้แล้วเปลี่ยนใจก่อนจ่าย → ยกเลิกได้ ห้องกลับไปว่าง (เดิมรอให้หมดเวลา 15 นาทีอย่างเดียว)
+  const sameDay = await call('/bookings', { method: 'POST', cookie, body: { roomId: room.id, checkIn: today, checkOut: addDays(today, 1), guests: 1 } });
+  if (sameDay.status === 201) {
+    created.push(sameDay.data.booking.id);
+    const cancelled = await call(`/bookings/${sameDay.data.booking.id}/cancel`, { method: 'POST', cookie });
+    ok(sameDay.data.booking.canCancel === true && cancelled.status === 200 && cancelled.data.booking.status === 'cancelled',
+      'จองเข้าพักวันนี้ ยังไม่จ่าย → ยกเลิกเองได้', JSON.stringify(cancelled.data));
+  } else {
+    console.log(`SKIP  จองเข้าพักวันนี้ไม่ได้ (${sameDay.status} ${sameDay.data?.message}) — ข้ามการทดสอบยกเลิกการจองวันนี้`);
+  }
 } catch (error) {
   failed += 1;
   console.error('ERROR', error.message);

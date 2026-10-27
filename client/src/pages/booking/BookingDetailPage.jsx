@@ -9,7 +9,7 @@ import EmptyState from '../../components/EmptyState.jsx';
 import { PageLoader } from '../../components/Loading.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { formatDate, formatDateTime } from '../../lib/format.js';
-import { STATUS_META, paymentLabel, paymentMethodLabel } from './bookingStatus.js';
+import { STATUS_META, cancelNote, paymentLabel, paymentMethodLabel } from './bookingStatus.js';
 
 // ใช้ 2 แบบ: /booking/success/:id (หลังจ่ายเงินเสร็จ) และ /bookings/:id (ดูรายละเอียดจากหน้าการจองของฉัน)
 export default function BookingDetailPage({ justBooked = false }) {
@@ -163,10 +163,13 @@ export default function BookingDetailPage({ justBooked = false }) {
               {tx('ดูหน้าที่พัก', 'View property')}
             </Link>
           </div>
-          {booking.canCancel && (
-            <button type="button" onClick={() => setConfirmCancel(true)} className="text-sm font-semibold text-rose-600 hover:underline">
-              {tx('ยกเลิกการจองนี้', 'Cancel this booking')}
+          {booking.canCancel ? (
+            <button type="button" onClick={() => setConfirmCancel(true)} className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-white px-4 py-2.5 text-sm font-bold text-rose-600 hover:bg-rose-50">
+              <Icon name="x" className="h-4 w-4" />{tx('ยกเลิกการจองนี้', 'Cancel this booking')}
             </button>
+          ) : booking.status === 'confirmed' && (
+            // จ่ายแล้วแต่ถึงวันเช็กอินแล้ว — บอกเหตุผล ไม่ใช่ซ่อนปุ่มเฉยๆ
+            <p className="text-sm text-slate-500">{tx('ยกเลิกไม่ได้แล้ว — การจองที่ชำระแล้วยกเลิกได้ก่อนวันเช็กอินเท่านั้น', 'This booking can no longer be cancelled — paid bookings can be cancelled until the day before check-in.')}</p>
           )}
         </div>
 
@@ -187,15 +190,7 @@ export default function BookingDetailPage({ justBooked = false }) {
       <ConfirmDialog
         open={confirmCancel}
         title={tx('ยกเลิกการจองนี้?', 'Cancel this booking?')}
-        message={booking.paymentStatus !== 'Paid'
-          ? tx('ห้องที่ถือไว้จะถูกปล่อยให้ผู้อื่นจอง', 'The held room will be released.')
-          : booking.payment?.method === 'promptpay_live'
-            // PromptPay เงินจริงโอนเข้าบัญชีตรง ไม่ผ่าน gateway → ระบบสั่งคืนเงินเองไม่ได้
-            ? tx(`การจองนี้จ่ายด้วย PromptPay เงินจริง — ระบบโอนคืนอัตโนมัติไม่ได้ ต้องโอนคืน ${formatPrice(booking.totalAmount)} เอง และห้องจะถูกปล่อยให้ผู้อื่นจอง`, `This booking was paid with real PromptPay — it can't be refunded automatically; transfer ${formatPrice(booking.totalAmount)} back yourself. The room will be released.`)
-            : booking.payment?.manualRefund
-              // PromptPay ผ่าน Opn: Opn คืนเงิน PromptPay ไม่ได้ → ผู้ดูแลระบบต้องโอนคืนเอง
-              ? tx(`การจองนี้จ่ายด้วย PromptPay ผ่าน Opn ซึ่งคืนเงินอัตโนมัติไม่ได้ — ผู้ดูแลระบบจะโอนคืน ${formatPrice(booking.totalAmount)} ให้ภายหลัง และห้องจะถูกปล่อยให้ผู้อื่นจอง`, `This booking was paid with PromptPay via Opn, which can't be refunded automatically — an admin will transfer ${formatPrice(booking.totalAmount)} back to you later. The room will be released.`)
-              : tx(`ระบบจะคืนเงิน ${formatPrice(booking.totalAmount)} ไปยังช่องทางที่ชำระ และห้องจะถูกปล่อยให้ผู้อื่นจอง`, `We'll refund ${formatPrice(booking.totalAmount)} to your original payment method and release the room.`)}
+        message={cancelNote(booking, tx, formatPrice)}
         confirmLabel={tx('ยืนยันการยกเลิก', 'Yes, cancel booking')}
         loading={cancelling}
         error={cancelError}

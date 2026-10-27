@@ -98,7 +98,8 @@ export function serializeBooking(row) {
       : null,
     hasReview: row.has_review,
     canPay: status === 'awaiting_payment',
-    canCancel: ['awaiting_payment', 'confirmed'].includes(status) && row.check_in > today,
+    // ยกเลิกเองได้: รอชำระ = ได้ตลอด (แค่ปล่อยห้องที่ถือไว้ ไม่มีเงินต้องคืน) · จ่ายแล้ว = ก่อนวันเช็กอินเท่านั้น
+    canCancel: status === 'awaiting_payment' || (status === 'confirmed' && row.check_in > today),
     canReview: status === 'completed' && !row.has_review && String(row.payment_status).toLowerCase() === 'paid',
   };
 }

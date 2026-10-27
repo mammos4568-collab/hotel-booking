@@ -4,10 +4,12 @@ import { api } from '../../api.js';
 import Icon from '../../components/Icon.jsx';
 import BookingSteps from '../../components/BookingSteps.jsx';
 import BookingSummary from '../../components/BookingSummary.jsx';
+import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
 import { PageLoader, Spinner } from '../../components/Loading.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
+import { cancelNote } from './bookingStatus.js';
 
 // ---------- ตรวจบัตรฝั่งหน้าเว็บ (server ตรวจซ้ำอีกรอบเสมอ) ----------
 function passesLuhn(digits) {
@@ -120,6 +122,9 @@ export default function PaymentPage() {
   const [liveQr, setLiveQr] = useState(null); // PromptPay เงินจริง: { qr, amount, account } | { error }
   const [liveChecked, setLiveChecked] = useState(false); // admin ติ๊กว่าตรวจแล้วว่าเงินเข้าบัญชี
   const [gatewayQr, setGatewayQr] = useState(null); // PromptPay ผ่าน Opn: { image, expiresAt, amount } ที่ server ส่งมา
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState('');
   const [searchParams, setSearchParams] = useSearchParams();
   const returnedFromGateway = searchParams.get('gateway_return') === '1';
   const [verifying, setVerifying] = useState(returnedFromGateway);
@@ -277,6 +282,22 @@ export default function PaymentPage() {
       }
     } finally {
       if (!leaving) setPaying(false);
+    }
+  };
+
+  // เปลี่ยนใจไม่จองแล้ว → ยกเลิกตรงนี้ได้เลย ห้องที่ถือไว้กลับไปว่างทันที (server ตรวจสิทธิ์ + ล็อกแถวการจองเหมือนหน้าอื่น)
+  const cancelBooking = async () => {
+    setCancelling(true);
+    setCancelError('');
+    try {
+      const data = await api(`/bookings/${id}/cancel`, { method: 'POST' });
+      setConfirmCancel(false);
+      setGatewayQr(null); // หยุดรอผล QR — การจองถูกยกเลิกแล้ว
+      setBooking(data.booking); // หน้าเปลี่ยนเป็น "การจองนี้ถูกยกเลิกแล้ว" เอง
+    } catch (err) {
+      setCancelError(err.message);
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -608,6 +629,15 @@ export default function PaymentPage() {
               </button>
             </div>
           )}
+
+          {booking.canCancel && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <p className="text-sm text-slate-600">{tx('เปลี่ยนใจแล้ว? ยกเลิกได้เลย ห้องที่ถือไว้จะถูกปล่อยให้ผู้อื่นจองทันที', 'Changed your mind? Cancel now and the held room is released right away.')}</p>
+              <button type="button" onClick={() => setConfirmCancel(true)} className="inline-flex items-center gap-2 rounded-xl border border-rose-200 px-4 py-2 text-sm font-bold text-rose-600 hover:bg-rose-50">
+                <Icon name="x" className="h-4 w-4" />{tx('ยกเลิกการจอง', 'Cancel booking')}
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="lg:sticky lg:top-24 lg:self-start">
@@ -630,6 +660,17 @@ export default function PaymentPage() {
           />
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmCancel}
+        title={tx('ยกเลิกการจองนี้?', 'Cancel this booking?')}
+        message={cancelNote(booking, tx, formatPrice)}
+        confirmLabel={tx('ยืนยันการยกเลิก', 'Yes, cancel booking')}
+        loading={cancelling}
+        error={cancelError}
+        onConfirm={cancelBooking}
+        onClose={() => { setConfirmCancel(false); setCancelError(''); }}
+      />
     </div>
   );
 }

@@ -9,7 +9,7 @@ import EmptyState from '../../components/EmptyState.jsx';
 import { PageLoader } from '../../components/Loading.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { cityLabel, formatDate } from '../../lib/format.js';
-import { STATUS_META } from './bookingStatus.js';
+import { STATUS_META, cancelNote } from './bookingStatus.js';
 
 const TABS = [
   { key: 'upcoming', statuses: ['awaiting_payment', 'confirmed'] },
@@ -78,10 +78,13 @@ function BookingCard({ booking, onCancel }) {
               <Icon name="arrow-right" className="h-4 w-4" />{tx('จองอีกครั้ง', 'Book again')}
             </Link>
           )}
-          {booking.canCancel && (
-            <button type="button" onClick={() => onCancel(booking)} className="ml-auto rounded-xl px-3 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50">
-              {tx('ยกเลิกการจอง', 'Cancel booking')}
+          {booking.canCancel ? (
+            <button type="button" onClick={() => onCancel(booking)} className="ml-auto inline-flex items-center gap-1.5 rounded-xl border border-rose-200 px-3 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50">
+              <Icon name="x" className="h-4 w-4" />{tx('ยกเลิกการจอง', 'Cancel booking')}
             </button>
+          ) : booking.status === 'confirmed' && (
+            // จ่ายแล้วแต่ถึงวันเช็กอินแล้ว — บอกเหตุผล ไม่ใช่ซ่อนปุ่มเฉยๆ
+            <p className="ml-auto text-xs text-slate-500">{tx('ยกเลิกได้ก่อนวันเช็กอินเท่านั้น', 'Cancellable until the day before check-in')}</p>
           )}
         </div>
       </div>
@@ -173,11 +176,7 @@ export default function MyBookingsPage() {
         message={cancelTarget && (
           <>
             <p><b>{cancelTarget.hotel.name}</b> · {cancelTarget.reference}</p>
-            <p className="mt-1">
-              {cancelTarget.paymentStatus === 'Paid'
-                ? tx(`ระบบจะคืนเงิน ${formatPrice(cancelTarget.totalAmount)} และห้องจะถูกปล่อยให้ผู้อื่นจอง`, `We'll refund ${formatPrice(cancelTarget.totalAmount)} and release the room.`)
-                : tx('ห้องที่ถือไว้จะถูกปล่อยให้ผู้อื่นจอง', 'The held room will be released.')}
-            </p>
+            <p className="mt-1">{cancelNote(cancelTarget, tx, formatPrice)}</p>
           </>
         )}
         confirmLabel={tx('ยืนยันการยกเลิก', 'Yes, cancel')}
